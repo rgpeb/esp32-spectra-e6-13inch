@@ -6,11 +6,14 @@
 #include <TJpg_Decoder.h>
 #include <WiFi.h>
 
+#include "FolderImageSource.h"
 #include "battery.h"
 #include <FS.h>
 
-ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config)
-    : display(display), config(config), smallFont(u8g2_font_helvR12_tr) {
+ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config,
+                         ApplicationConfigStorage &configStorage)
+    : display(display), config(config), configStorage(configStorage),
+      smallFont(u8g2_font_helvR12_tr) {
   gfx.begin(display);
 }
 
@@ -131,36 +134,60 @@ static uint8_t findNearestColor(int r, int g, int b) {
   return nearestIndex;
 }
 
-std::unique_ptr<ColorImageBitmaps>
-ImageScreen::ditherImage(uint16_t *rgb565Buffer, uint32_t width,
-                         uint32_t height) {
+// ---- Shared helpers for all dithering algorithms ----
+
+static std::unique_ptr<ColorImageBitmaps> allocateBitmaps(uint32_t width,
+                                                           uint32_t height) {
   int bitmapWidthBytes = (width + 7) / 8;
   size_t bitmapSize = bitmapWidthBytes * height;
-
-  auto bitmaps = std::unique_ptr<ColorImageBitmaps>(new ColorImageBitmaps());
-  bitmaps->width = width;
-  bitmaps->height = height;
-  bitmaps->bitmapSize = bitmapSize;
-
-  bitmaps->blackBitmap = (uint8_t *)ps_malloc(bitmapSize);
-  bitmaps->yellowBitmap = (uint8_t *)ps_malloc(bitmapSize);
-  bitmaps->redBitmap = (uint8_t *)ps_malloc(bitmapSize);
-  bitmaps->blueBitmap = (uint8_t *)ps_malloc(bitmapSize);
-  bitmaps->greenBitmap = (uint8_t *)ps_malloc(bitmapSize);
-
-  if (!bitmaps->blackBitmap || !bitmaps->yellowBitmap || !bitmaps->redBitmap ||
-      !bitmaps->blueBitmap || !bitmaps->greenBitmap) {
+  auto b = std::unique_ptr<ColorImageBitmaps>(new ColorImageBitmaps());
+  b->width = width;
+  b->height = height;
+  b->bitmapSize = bitmapSize;
+  b->blackBitmap = (uint8_t *)ps_malloc(bitmapSize);
+  b->yellowBitmap = (uint8_t *)ps_malloc(bitmapSize);
+  b->redBitmap = (uint8_t *)ps_malloc(bitmapSize);
+  b->blueBitmap = (uint8_t *)ps_malloc(bitmapSize);
+  b->greenBitmap = (uint8_t *)ps_malloc(bitmapSize);
+  if (!b->blackBitmap || !b->yellowBitmap || !b->redBitmap ||
+      !b->blueBitmap || !b->greenBitmap) {
     Serial.println("Failed to allocate PSRAM for output bitmaps");
     return nullptr;
   }
+  memset(b->blackBitmap, 0, bitmapSize);
+  memset(b->yellowBitmap, 0, bitmapSize);
+  memset(b->redBitmap, 0, bitmapSize);
+  memset(b->blueBitmap, 0, bitmapSize);
+  memset(b->greenBitmap, 0, bitmapSize);
+  return b;
+}
 
-  memset(bitmaps->blackBitmap, 0, bitmapSize);
-  memset(bitmaps->yellowBitmap, 0, bitmapSize);
-  memset(bitmaps->redBitmap, 0, bitmapSize);
-  memset(bitmaps->blueBitmap, 0, bitmapSize);
-  memset(bitmaps->greenBitmap, 0, bitmapSize);
+static inline void setColorBit(ColorImageBitmaps &bm, uint8_t colorIdx,
+                                int byteIndex, uint8_t bitMask) {
+  switch (colorIdx) {
+  case 0: bm.blackBitmap[byteIndex] |= bitMask; break;
+  case 2: bm.yellowBitmap[byteIndex] |= bitMask; break;
+  case 3: bm.redBitmap[byteIndex] |= bitMask; break;
+  case 4: bm.blueBitmap[byteIndex] |= bitMask; break;
+  case 5: bm.greenBitmap[byteIndex] |= bitMask; break;
+  }
+}
 
-  // Allocate just 2 rows for error diffusion to save huge amounts of PSRAM
+static inline void extractRGB565(uint16_t p565, int &r, int &g, int &b) {
+  r = ((p565 >> 11) & 0x1F) << 3;
+  g = ((p565 >> 5) & 0x3F) << 2;
+  b = (p565 & 0x1F) << 3;
+}
+
+// ---- Floyd-Steinberg dithering (default) ----
+
+static std::unique_ptr<ColorImageBitmaps>
+ditherFloydSteinberg(uint16_t *rgb565Buffer, uint32_t width, uint32_t height) {
+  Serial.println("Dithering: Floyd-Steinberg");
+  auto bitmaps = allocateBitmaps(width, height);
+  if (!bitmaps) return nullptr;
+  int bitmapWidthBytes = (width + 7) / 8;
+
   int16_t *errR_curr = (int16_t *)calloc(width, sizeof(int16_t));
   int16_t *errG_curr = (int16_t *)calloc(width, sizeof(int16_t));
   int16_t *errB_curr = (int16_t *)calloc(width, sizeof(int16_t));
@@ -170,65 +197,39 @@ ImageScreen::ditherImage(uint16_t *rgb565Buffer, uint32_t width,
 
   for (uint32_t y = 0; y < height; y++) {
     for (uint32_t x = 0; x < width; x++) {
-      size_t idx = y * width + x;
-      uint16_t p565 = rgb565Buffer[idx];
-
-      int r = ((p565 >> 11) & 0x1F) << 3;
-      int g = ((p565 >> 5) & 0x3F) << 2;
-      int b = (p565 & 0x1F) << 3;
-
+      int r, g, b;
+      extractRGB565(rgb565Buffer[y * width + x], r, g, b);
       r = constrain(r + errR_curr[x], 0, 255);
       g = constrain(g + errG_curr[x], 0, 255);
       b = constrain(b + errB_curr[x], 0, 255);
 
-      uint8_t colorIdx = findNearestColor(r, g, b);
-
+      uint8_t ci = findNearestColor(r, g, b);
       int flippedY = (height - 1) - y;
-      int byteIndex = flippedY * bitmapWidthBytes + x / 8;
-      uint8_t bitMask = 1 << (7 - (x % 8));
+      setColorBit(*bitmaps, ci, flippedY * bitmapWidthBytes + x / 8,
+                  1 << (7 - (x % 8)));
 
-      switch (colorIdx) {
-      case 0:
-        bitmaps->blackBitmap[byteIndex] |= bitMask;
-        break;
-      case 2:
-        bitmaps->yellowBitmap[byteIndex] |= bitMask;
-        break;
-      case 3:
-        bitmaps->redBitmap[byteIndex] |= bitMask;
-        break;
-      case 4:
-        bitmaps->blueBitmap[byteIndex] |= bitMask;
-        break;
-      case 5:
-        bitmaps->greenBitmap[byteIndex] |= bitMask;
-        break;
-      }
+      int eR = r - Spectra6Palette[ci].r;
+      int eG = g - Spectra6Palette[ci].g;
+      int eB = b - Spectra6Palette[ci].b;
 
-      int errR = r - Spectra6Palette[colorIdx].r;
-      int errG = g - Spectra6Palette[colorIdx].g;
-      int errB = b - Spectra6Palette[colorIdx].b;
-
-      // Floyd-Steinberg diffusion
       if (x + 1 < width) {
-        errR_curr[x + 1] += (errR * 7) / 16;
-        errG_curr[x + 1] += (errG * 7) / 16;
-        errB_curr[x + 1] += (errB * 7) / 16;
+        errR_curr[x+1] += (eR * 7) / 16;
+        errG_curr[x+1] += (eG * 7) / 16;
+        errB_curr[x+1] += (eB * 7) / 16;
       }
       if (y + 1 < height) {
         if (x > 0) {
-          errR_next[x - 1] += (errR * 3) / 16;
-          errG_next[x - 1] += (errG * 3) / 16;
-          errB_next[x - 1] += (errB * 3) / 16;
+          errR_next[x-1] += (eR * 3) / 16;
+          errG_next[x-1] += (eG * 3) / 16;
+          errB_next[x-1] += (eB * 3) / 16;
         }
-        errR_next[x] += (errR * 5) / 16;
-        errG_next[x] += (errG * 5) / 16;
-        errB_next[x] += (errB * 5) / 16;
-
+        errR_next[x] += (eR * 5) / 16;
+        errG_next[x] += (eG * 5) / 16;
+        errB_next[x] += (eB * 5) / 16;
         if (x + 1 < width) {
-          errR_next[x + 1] += (errR * 1) / 16;
-          errG_next[x + 1] += (errG * 1) / 16;
-          errB_next[x + 1] += (errB * 1) / 16;
+          errR_next[x+1] += (eR * 1) / 16;
+          errG_next[x+1] += (eG * 1) / 16;
+          errB_next[x+1] += (eB * 1) / 16;
         }
       }
     }
@@ -239,15 +240,144 @@ ImageScreen::ditherImage(uint16_t *rgb565Buffer, uint32_t width,
     memset(errG_next, 0, width * sizeof(int16_t));
     memset(errB_next, 0, width * sizeof(int16_t));
   }
-
-  free(errR_curr);
-  free(errG_curr);
-  free(errB_curr);
-  free(errR_next);
-  free(errG_next);
-  free(errB_next);
-
+  free(errR_curr); free(errG_curr); free(errB_curr);
+  free(errR_next); free(errG_next); free(errB_next);
   return bitmaps;
+}
+
+// ---- Atkinson dithering — diffuses only 6/8 of error for higher contrast ----
+
+static std::unique_ptr<ColorImageBitmaps>
+ditherAtkinson(uint16_t *rgb565Buffer, uint32_t width, uint32_t height) {
+  Serial.println("Dithering: Atkinson");
+  auto bitmaps = allocateBitmaps(width, height);
+  if (!bitmaps) return nullptr;
+  int bitmapWidthBytes = (width + 7) / 8;
+
+  // Need 3 rows of error: current, next, next+1
+  int16_t *eR[3], *eG[3], *eB[3];
+  for (int i = 0; i < 3; i++) {
+    eR[i] = (int16_t *)calloc(width, sizeof(int16_t));
+    eG[i] = (int16_t *)calloc(width, sizeof(int16_t));
+    eB[i] = (int16_t *)calloc(width, sizeof(int16_t));
+  }
+
+  for (uint32_t y = 0; y < height; y++) {
+    for (uint32_t x = 0; x < width; x++) {
+      int r, g, b;
+      extractRGB565(rgb565Buffer[y * width + x], r, g, b);
+      r = constrain(r + eR[0][x], 0, 255);
+      g = constrain(g + eG[0][x], 0, 255);
+      b = constrain(b + eB[0][x], 0, 255);
+
+      uint8_t ci = findNearestColor(r, g, b);
+      int flippedY = (height - 1) - y;
+      setColorBit(*bitmaps, ci, flippedY * bitmapWidthBytes + x / 8,
+                  1 << (7 - (x % 8)));
+
+      // Atkinson: distribute 6/8 of error (lose 2/8 = sharper contrast)
+      int dR = (r - Spectra6Palette[ci].r) / 8;
+      int dG = (g - Spectra6Palette[ci].g) / 8;
+      int dB = (b - Spectra6Palette[ci].b) / 8;
+
+      // Right +1, Right +2
+      if (x + 1 < width) { eR[0][x+1] += dR; eG[0][x+1] += dG; eB[0][x+1] += dB; }
+      if (x + 2 < width) { eR[0][x+2] += dR; eG[0][x+2] += dG; eB[0][x+2] += dB; }
+      // Next row: left, center, right
+      if (y + 1 < height) {
+        if (x > 0) { eR[1][x-1] += dR; eG[1][x-1] += dG; eB[1][x-1] += dB; }
+        eR[1][x] += dR; eG[1][x] += dG; eB[1][x] += dB;
+        if (x + 1 < width) { eR[1][x+1] += dR; eG[1][x+1] += dG; eB[1][x+1] += dB; }
+      }
+      // Two rows down: center
+      if (y + 2 < height) { eR[2][x] += dR; eG[2][x] += dG; eB[2][x] += dB; }
+    }
+    // Rotate error rows
+    int16_t *tmpR = eR[0], *tmpG = eG[0], *tmpB = eB[0];
+    eR[0] = eR[1]; eG[0] = eG[1]; eB[0] = eB[1];
+    eR[1] = eR[2]; eG[1] = eG[2]; eB[1] = eB[2];
+    eR[2] = tmpR;  eG[2] = tmpG;  eB[2] = tmpB;
+    memset(eR[2], 0, width * sizeof(int16_t));
+    memset(eG[2], 0, width * sizeof(int16_t));
+    memset(eB[2], 0, width * sizeof(int16_t));
+  }
+  for (int i = 0; i < 3; i++) { free(eR[i]); free(eG[i]); free(eB[i]); }
+  return bitmaps;
+}
+
+// ---- Ordered (Bayer 8x8) dithering — no error diffusion ----
+
+static const uint8_t bayer8x8[8][8] = {
+  { 0, 32,  8, 40,  2, 34, 10, 42},
+  {48, 16, 56, 24, 50, 18, 58, 26},
+  {12, 44,  4, 36, 14, 46,  6, 38},
+  {60, 28, 52, 20, 62, 30, 54, 22},
+  { 3, 35, 11, 43,  1, 33,  9, 41},
+  {51, 19, 59, 27, 49, 17, 57, 25},
+  {15, 47,  7, 39, 13, 45,  5, 37},
+  {63, 31, 55, 23, 61, 29, 53, 21}
+};
+
+static std::unique_ptr<ColorImageBitmaps>
+ditherOrdered(uint16_t *rgb565Buffer, uint32_t width, uint32_t height) {
+  Serial.println("Dithering: Ordered (Bayer 8x8)");
+  auto bitmaps = allocateBitmaps(width, height);
+  if (!bitmaps) return nullptr;
+  int bitmapWidthBytes = (width + 7) / 8;
+
+  for (uint32_t y = 0; y < height; y++) {
+    for (uint32_t x = 0; x < width; x++) {
+      int r, g, b;
+      extractRGB565(rgb565Buffer[y * width + x], r, g, b);
+
+      // Apply Bayer threshold bias (-32..+31 range mapped to -64..+63)
+      int bias = ((int)bayer8x8[y & 7][x & 7] - 32) * 2;
+      r = constrain(r + bias, 0, 255);
+      g = constrain(g + bias, 0, 255);
+      b = constrain(b + bias, 0, 255);
+
+      uint8_t ci = findNearestColor(r, g, b);
+      int flippedY = (height - 1) - y;
+      setColorBit(*bitmaps, ci, flippedY * bitmapWidthBytes + x / 8,
+                  1 << (7 - (x % 8)));
+    }
+  }
+  return bitmaps;
+}
+
+// ---- No dithering — nearest colour only ----
+
+static std::unique_ptr<ColorImageBitmaps>
+ditherNone(uint16_t *rgb565Buffer, uint32_t width, uint32_t height) {
+  Serial.println("Dithering: None (nearest colour)");
+  auto bitmaps = allocateBitmaps(width, height);
+  if (!bitmaps) return nullptr;
+  int bitmapWidthBytes = (width + 7) / 8;
+
+  for (uint32_t y = 0; y < height; y++) {
+    for (uint32_t x = 0; x < width; x++) {
+      int r, g, b;
+      extractRGB565(rgb565Buffer[y * width + x], r, g, b);
+      uint8_t ci = findNearestColor(r, g, b);
+      int flippedY = (height - 1) - y;
+      setColorBit(*bitmaps, ci, flippedY * bitmapWidthBytes + x / 8,
+                  1 << (7 - (x % 8)));
+    }
+  }
+  return bitmaps;
+}
+
+// ---- Dispatcher — picks algorithm based on config ----
+
+std::unique_ptr<ColorImageBitmaps>
+ImageScreen::ditherImage(uint16_t *rgb565Buffer, uint32_t width,
+                         uint32_t height) {
+  switch (config.ditherMode) {
+  case DITHER_ATKINSON: return ditherAtkinson(rgb565Buffer, width, height);
+  case DITHER_ORDERED:  return ditherOrdered(rgb565Buffer, width, height);
+  case DITHER_NONE:     return ditherNone(rgb565Buffer, width, height);
+  default:              return ditherFloydSteinberg(rgb565Buffer, width, height);
+  }
 }
 
 static uint16_t *jpgRgb565Buffer = nullptr;
@@ -685,6 +815,23 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::loadFromLittleFS() {
   return bitmaps;
 }
 
+std::unique_ptr<ColorImageBitmaps> ImageScreen::loadFromFolder() {
+  uint16_t imageIndex = configStorage.loadImageIndex();
+  uint16_t totalImages = 0;
+
+  FolderImageSource folderSource;
+  auto result = folderSource.fetchImage(String(config.folderUrl), imageIndex,
+                                         totalImages);
+
+  if (!result || result->httpCode != HTTP_CODE_OK || !result->data) {
+    printf("Folder: failed to fetch image\r\n");
+    return nullptr;
+  }
+
+  printf("Folder: processing image (%d bytes)\r\n", result->size);
+  return processImageData(result->data, result->size, &result->data);
+}
+
 void ImageScreen::render() {
   display.init(115200);
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
@@ -692,33 +839,38 @@ void ImageScreen::render() {
   display.fillScreen(GxEPD_WHITE);
 
   LittleFS.begin(true);
+
+  // Priority 1: Local uploaded image (from web upload or SD card copy)
   auto bitmaps = loadFromLittleFS();
 
-  if (bitmaps) {
-    printf("Rendering local image from LittleFS\r\n");
-    renderBitmaps(*bitmaps);
-    displayBatteryStatus();
-    displayWifiInfo();
-    display.display();
-    display.hibernate();
-    return;
+  // Priority 2: Folder URL — cycle through images in order
+  if (!bitmaps && config.hasFolderUrl()) {
+    bitmaps = loadFromFolder();
+    if (!bitmaps) {
+      printf("Folder source failed, falling back to single image URL\r\n");
+    }
   }
 
-  auto downloadResult = download();
+  // Priority 3: Single image URL
+  if (!bitmaps && strlen(config.imageUrl) > 0) {
+    auto downloadResult = download();
 
-  if (downloadResult->httpCode == HTTP_CODE_NOT_MODIFIED) {
-    Serial.println("Image not modified (304), using cached version");
-    return;
+    if (downloadResult->httpCode == HTTP_CODE_NOT_MODIFIED) {
+      Serial.println("Image not modified (304), using cached version");
+      return;
+    }
+
+    if (downloadResult->httpCode == HTTP_CODE_OK) {
+      bitmaps =
+          processImageData(downloadResult->data, downloadResult->size);
+    } else {
+      printf("Failed to download image (HTTP %d)\r\n",
+             downloadResult->httpCode);
+    }
   }
 
-  if (downloadResult->httpCode != HTTP_CODE_OK) {
-    printf("Failed to download image (HTTP %d)\r\n", downloadResult->httpCode);
-    return;
-  }
-
-  bitmaps = processImageData(downloadResult->data, downloadResult->size);
   if (!bitmaps) {
-    printf("Failed to process image data\r\n");
+    printf("No image available from any source\r\n");
     return;
   }
 

@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "ApplicationConfig.h"
+#include "ApplicationConfigStorage.h"
 #include "DisplayAdapter.h"
 #include "HttpDownloader.h"
 #include "Screen.h"
@@ -51,6 +52,7 @@ private:
   DisplayType &display;
   U8G2_FOR_ADAFRUIT_GFX gfx;
   ApplicationConfig &config;
+  ApplicationConfigStorage &configStorage;
   HttpDownloader downloader;
 
   const uint8_t *smallFont;
@@ -66,6 +68,7 @@ private:
   void storeImageETag(const String &etag);
   String getStoredImageETag();
   std::unique_ptr<ColorImageBitmaps> loadFromLittleFS();
+  std::unique_ptr<ColorImageBitmaps> loadFromFolder();
   std::unique_ptr<ColorImageBitmaps>
   ditherImage(uint16_t *rgb565Buffer, uint32_t width, uint32_t height);
   static bool jpgOutput(int16_t x, int16_t y, uint16_t w, uint16_t h,
@@ -79,7 +82,8 @@ private:
   std::unique_ptr<ColorImageBitmaps> decodeBMP(uint8_t *data, size_t dataSize);
 
 public:
-  ImageScreen(DisplayType &display, ApplicationConfig &config);
+  ImageScreen(DisplayType &display, ApplicationConfig &config,
+              ApplicationConfigStorage &configStorage);
   void render() override;
   int nextRefreshInSeconds() override;
 };

@@ -5,6 +5,7 @@
 
 const char* ApplicationConfigStorage::NVS_NAMESPACE = "weather_config";
 const char* ApplicationConfigStorage::CONFIG_KEY = "app_config";
+const char* ApplicationConfigStorage::IMG_INDEX_KEY = "img_index";
 
 ApplicationConfigStorage::ApplicationConfigStorage() {
   esp_err_t err = nvs_flash_init();
@@ -90,6 +91,29 @@ void ApplicationConfigStorage::clear() {
     Serial.println("Configuration cleared from NVS");
   }
 
+  nvs_commit(nvsHandle);
+  nvs_close(nvsHandle);
+}
+
+uint16_t ApplicationConfigStorage::loadImageIndex() {
+  nvs_handle_t nvsHandle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvsHandle);
+  if (err != ESP_OK) return 0;
+
+  uint16_t index = 0;
+  err = nvs_get_u16(nvsHandle, IMG_INDEX_KEY, &index);
+  nvs_close(nvsHandle);
+
+  if (err != ESP_OK) return 0;
+  return index;
+}
+
+void ApplicationConfigStorage::saveImageIndex(uint16_t index) {
+  nvs_handle_t nvsHandle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvsHandle);
+  if (err != ESP_OK) return;
+
+  nvs_set_u16(nvsHandle, IMG_INDEX_KEY, index);
   nvs_commit(nvsHandle);
   nvs_close(nvsHandle);
 }

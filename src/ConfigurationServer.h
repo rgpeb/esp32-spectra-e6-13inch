@@ -13,12 +13,20 @@ struct Configuration {
   String ssid;
   String password;
   String imageUrl;
+  String folderUrl;
+  uint8_t ditherMode = 0;
+  uint16_t sleepMinutes = 0;
+  uint16_t imageChangeMinutes = 30;
 
   Configuration() = default;
 
   Configuration(const String &ssid, const String &password,
-                const String &imageUrl)
-      : ssid(ssid), password(password), imageUrl(imageUrl) {}
+                const String &imageUrl, const String &folderUrl = "",
+                uint8_t ditherMode = 0, uint16_t sleepMinutes = 0,
+                uint16_t imageChangeMinutes = 30)
+      : ssid(ssid), password(password), imageUrl(imageUrl),
+        folderUrl(folderUrl), ditherMode(ditherMode),
+        sleepMinutes(sleepMinutes), imageChangeMinutes(imageChangeMinutes) {}
 };
 
 using OnSaveCallback = std::function<void(const Configuration &config)>;

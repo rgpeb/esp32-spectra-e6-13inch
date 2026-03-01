@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Weather Station Configuration</title>
+    <title>E-Ink Display Setup</title>
     <style>
         * {
             box-sizing: border-box;
@@ -296,7 +296,7 @@
 
 <body>
     <div class="container">
-        <h1>Weather Station Setup</h1>
+        <h1>E-Ink Display Setup</h1>
 
         <div id="status" class="status"></div>
 
@@ -314,14 +314,65 @@
             </div>
 
             <div class="form-group">
-                <label for="imageUrl">Image URL <span class="optional-label">(optional)</span></label>
+                <label for="imageUrl">Single Image URL <span class="optional-label">(optional)</span></label>
                 <input type="text" id="imageUrl" name="imageUrl"
-                    placeholder="Enter full image URL (e.g., https://example.com/image.jpg)"
+                    placeholder="https://example.com/image.jpg"
                     value="{{CURRENT_IMAGE_URL}}" autocomplete="off" autocapitalize="none" autocorrect="off">
                 <small style="color: #6b7280; font-size: 12px; margin-top: 4px; display: block;">
-                    Must return a direct image file (JPEG, PNG, BMP) that can be downloaded and processed for
-                    e-ink display.
+                    Direct link to a single image (JPEG, PNG, BMP). Used when no local image or folder is set.
                 </small>
+            </div>
+
+            <div class="form-group">
+                <label for="folderUrl">Image Folder URL <span class="optional-label">(optional)</span></label>
+                <input type="text" id="folderUrl" name="folderUrl"
+                    placeholder="http://192.168.1.10/photos/"
+                    value="{{CURRENT_FOLDER_URL}}" autocomplete="off" autocapitalize="none" autocorrect="off">
+                <small style="color: #6b7280; font-size: 12px; margin-top: 4px; display: block;">
+                    HTTP server directory with images. The device will cycle through them in order.
+                    Works with nginx autoindex, Python http.server, NAS web shares, etc.
+                </small>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid rgba(0,0,0,0.1); margin: 24px 0;">
+
+            <div class="form-group">
+                <label for="ditherMode">Dithering Algorithm</label>
+                <select id="ditherMode" name="ditherMode">
+                    <option value="0" {{DITHER_SEL_0}}>Floyd-Steinberg (smooth gradients)</option>
+                    <option value="1" {{DITHER_SEL_1}}>Atkinson (sharp, high contrast)</option>
+                    <option value="2" {{DITHER_SEL_2}}>Ordered / Bayer (crosshatch pattern)</option>
+                    <option value="3" {{DITHER_SEL_3}}>None (flat nearest colour)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="imageChangeMinutes">Change Image Every</label>
+                <select id="imageChangeMinutes" name="imageChangeMinutes">
+                    <option value="0" {{IMG_CHG_SEL_0}}>Every wake</option>
+                    <option value="15" {{IMG_CHG_SEL_15}}>15 minutes</option>
+                    <option value="30" {{IMG_CHG_SEL_30}}>30 minutes</option>
+                    <option value="60" {{IMG_CHG_SEL_60}}>1 hour</option>
+                    <option value="120" {{IMG_CHG_SEL_120}}>2 hours</option>
+                    <option value="360" {{IMG_CHG_SEL_360}}>6 hours</option>
+                    <option value="720" {{IMG_CHG_SEL_720}}>12 hours</option>
+                    <option value="1440" {{IMG_CHG_SEL_1440}}>24 hours</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="sleepMinutes">Wake From Sleep Every</label>
+                <select id="sleepMinutes" name="sleepMinutes">
+                    <option value="0" {{SLEEP_SEL_0}}>Never (manual reset only)</option>
+                    <option value="15" {{SLEEP_SEL_15}}>15 minutes</option>
+                    <option value="30" {{SLEEP_SEL_30}}>30 minutes</option>
+                    <option value="60" {{SLEEP_SEL_60}}>1 hour</option>
+                    <option value="120" {{SLEEP_SEL_120}}>2 hours</option>
+                    <option value="240" {{SLEEP_SEL_240}}>4 hours</option>
+                    <option value="360" {{SLEEP_SEL_360}}>6 hours</option>
+                    <option value="720" {{SLEEP_SEL_720}}>12 hours</option>
+                    <option value="1440" {{SLEEP_SEL_1440}}>24 hours</option>
+                </select>
             </div>
 
             <button type="submit" class="btn" id="submitBtn">Save Configuration</button>
@@ -364,6 +415,10 @@
             const ssid = document.getElementById('ssid').value;
             const password = document.getElementById('password').value;
             const imageUrl = document.getElementById('imageUrl').value;
+            const folderUrl = document.getElementById('folderUrl').value;
+            const ditherMode = document.getElementById('ditherMode').value;
+            const imageChangeMinutes = document.getElementById('imageChangeMinutes').value;
+            const sleepMinutes = document.getElementById('sleepMinutes').value;
 
             submitBtn.disabled = true;
             submitBtn.textContent = 'Saving...';
@@ -376,6 +431,10 @@
                 formData.append('ssid', ssid);
                 formData.append('password', password);
                 formData.append('imageUrl', imageUrl);
+                formData.append('folderUrl', folderUrl);
+                formData.append('ditherMode', ditherMode);
+                formData.append('imageChangeMinutes', imageChangeMinutes);
+                formData.append('sleepMinutes', sleepMinutes);
 
                 const response = await fetch('/save', {
                     method: 'POST',

@@ -186,9 +186,16 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     config.ssid = request->getParam("ssid", true)->value();
     config.password = request->getParam("password", true)->value();
 
-    if (request->hasParam("imageUrl", true)) {
+    if (request->hasParam("imageUrl", true))
       config.imageUrl = request->getParam("imageUrl", true)->value();
-    }
+    if (request->hasParam("folderUrl", true))
+      config.folderUrl = request->getParam("folderUrl", true)->value();
+    if (request->hasParam("ditherMode", true))
+      config.ditherMode = request->getParam("ditherMode", true)->value().toInt();
+    if (request->hasParam("sleepMinutes", true))
+      config.sleepMinutes = request->getParam("sleepMinutes", true)->value().toInt();
+    if (request->hasParam("imageChangeMinutes", true))
+      config.imageChangeMinutes = request->getParam("imageChangeMinutes", true)->value().toInt();
 
     Serial.println("Configuration received");
     request->send(200, "text/plain", "OK");
@@ -223,11 +230,47 @@ bool ConfigurationServer::loadHtmlTemplate() {
   return true;
 }
 
+static void setSelected(String &html, const String &placeholder, bool selected) {
+  html.replace(placeholder, selected ? "selected" : "");
+}
+
 String ConfigurationServer::getConfigurationPage() {
   String html = htmlTemplate;
   html.replace("{{CURRENT_SSID}}", currentConfiguration.ssid);
   html.replace("{{CURRENT_PASSWORD}}", currentConfiguration.password);
   html.replace("{{CURRENT_IMAGE_URL}}", currentConfiguration.imageUrl);
+  html.replace("{{CURRENT_FOLDER_URL}}", currentConfiguration.folderUrl);
+
+  // Dithering dropdown
+  uint8_t dm = currentConfiguration.ditherMode;
+  setSelected(html, "{{DITHER_SEL_0}}", dm == 0);
+  setSelected(html, "{{DITHER_SEL_1}}", dm == 1);
+  setSelected(html, "{{DITHER_SEL_2}}", dm == 2);
+  setSelected(html, "{{DITHER_SEL_3}}", dm == 3);
+
+  // Image change interval dropdown
+  uint16_t ic = currentConfiguration.imageChangeMinutes;
+  setSelected(html, "{{IMG_CHG_SEL_0}}", ic == 0);
+  setSelected(html, "{{IMG_CHG_SEL_15}}", ic == 15);
+  setSelected(html, "{{IMG_CHG_SEL_30}}", ic == 30);
+  setSelected(html, "{{IMG_CHG_SEL_60}}", ic == 60);
+  setSelected(html, "{{IMG_CHG_SEL_120}}", ic == 120);
+  setSelected(html, "{{IMG_CHG_SEL_360}}", ic == 360);
+  setSelected(html, "{{IMG_CHG_SEL_720}}", ic == 720);
+  setSelected(html, "{{IMG_CHG_SEL_1440}}", ic == 1440);
+
+  // Sleep interval dropdown
+  uint16_t sl = currentConfiguration.sleepMinutes;
+  setSelected(html, "{{SLEEP_SEL_0}}", sl == 0);
+  setSelected(html, "{{SLEEP_SEL_15}}", sl == 15);
+  setSelected(html, "{{SLEEP_SEL_30}}", sl == 30);
+  setSelected(html, "{{SLEEP_SEL_60}}", sl == 60);
+  setSelected(html, "{{SLEEP_SEL_120}}", sl == 120);
+  setSelected(html, "{{SLEEP_SEL_240}}", sl == 240);
+  setSelected(html, "{{SLEEP_SEL_360}}", sl == 360);
+  setSelected(html, "{{SLEEP_SEL_720}}", sl == 720);
+  setSelected(html, "{{SLEEP_SEL_1440}}", sl == 1440);
+
   return html;
 }
 
