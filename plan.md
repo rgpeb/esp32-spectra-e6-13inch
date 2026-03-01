@@ -1,240 +1,301 @@
-# Plan: SD Card Pin Sharing — Approaches to Overcome the Conflict
+# Plan: Network Image Folder, Dithering Options, Image Cycling & Sleep Controls
 
-## The Problem
-
-The ESP32-133C02 board physically wires the SD card slot and the 13.3" e-ink display to the **same SPI bus** (`SPI3_HOST`):
-
-| Signal       | GPIO | Display Use    | SD Card Use |
-|-------------|------|----------------|-------------|
-| `SPI_CLK`   | 9    | SPI clock      | SD_CLK      |
-| `SPI_Data0` | 41   | Data0 (MOSI)   | SD_CMD      |
-| `SPI_Data1` | 40   | Data1 (MISO)   | SD_D0       |
-| `SPI_CS0`   | 18   | Display IC 0   | —           |
-| `SPI_CS1`   | 17   | Display IC 1   | —           |
-| `SW_4`      | 21   | —              | SD_CS       |
-
-Both devices cannot drive the bus simultaneously. Below are four approaches to overcome this, ranked from most practical to most involved.
+## TODO (Parked for Later)
+- **SD card support**: Pin sharing investigated, code written but mount fails on hardware. Needs physical debugging with logic analyser or oscilloscope.
 
 ---
 
-## Key Insight: The Display Doesn't Actually Use Quad-SPI
+## Overview
 
-Despite the README saying "QSPI", the actual SPI bus in `comm.c` is configured with only **two data lines** (Data0/Data1) — `quadwp_io_num` and `quadhd_io_num` are both set to `-1`. This means:
-
-- **GPIO 38** (`SPI_Data3`) and **GPIO 39** (`SPI_Data2`) are **defined but never used** by the SPI peripheral
-- The bus operates in **standard SPI mode** (or dual-SPI at most), identical to what the SD card needs
-- No SPI mode switching is required — both devices speak the same protocol
-
-This makes bus sharing much simpler than it would be with true QSPI.
-
----
-
-## Approach 1: Shared SPI Bus with ESP-IDF Device Multiplexing (Recommended)
-
-**Complexity: Low | Hardware Changes: None | Risk: Low**
-
-### How It Works
-
-ESP-IDF's SPI driver natively supports **multiple devices on the same bus**. Each device gets its own `spi_device_handle_t` with its own CS pin and clock configuration. The driver guarantees that only one device's CS is asserted at a time.
-
-### Implementation Steps
-
-1. **Register the SD card as a second SPI device** on the existing `SPI3_HOST` bus:
-   - CS pin = GPIO 21
-   - Clock speed = 10–20 MHz (SD cards are flexible)
-   - Use `sdspi_host_init_device()` from ESP-IDF's SDMMC/SPI layer, or Arduino's `SD.begin(21)`
-
-2. **Add a bus mutex / access guard** — a simple flag or semaphore that prevents display and SD card operations from overlapping:
-   - Before SD access: assert display CS0 and CS1 HIGH (they already should be, but be explicit)
-   - Before display access: assert SD_CS HIGH
-   - ESP-IDF handles this automatically per-transaction, but higher-level guards prevent interleaving mid-operation
-
-3. **Sequence operations in the boot flow:**
-   ```
-   Boot → Read image from SD card → Release SD bus
-        → Initialize display → Transfer framebuffer → Refresh (~20s)
-        → (Optionally access SD again while display refreshes)
-        → Deep sleep
-   ```
-
-4. **Leverage the e-ink refresh window** — during the ~20-second e-ink refresh, the display's BUSY pin goes LOW and **no SPI traffic occurs**. The SD card can be accessed freely during this window.
-
-### Pros
-- No hardware changes at all — works with the existing board wiring
-- ESP-IDF is designed for exactly this pattern
-- E-ink display only needs the bus for brief bursts (init + data transfer), leaving long windows for SD access
-- Simplest code changes
-
-### Cons
-- Cannot read SD card and write to display simultaneously (not needed for this use case)
-- Must be disciplined about CS management in firmware
-- If SD card is slow or encounters errors, display operations are blocked until SD access completes
-
-### Estimated Code Changes
-- `comm.c` / `comm.h`: Add SD card device registration alongside existing display device
-- New `SDCardManager.cpp/.h`: SD card init, read file, release bus
-- `main.cpp`: Updated boot flow to read from SD before display operations
-- `pindefine.h`: Add `#define SD_CS 21` for clarity
-
----
-
-## Approach 2: SPI Bus Teardown and Rebuild Between Devices
-
-**Complexity: Medium | Hardware Changes: None | Risk: Medium**
-
-### How It Works
-
-Instead of sharing the bus with multiple registered devices, completely **tear down** the SPI bus after display operations and **re-initialize** it for the SD card (and vice versa). This gives each device a completely clean bus state.
-
-### Implementation Steps
-
-1. **Phase 1 — SD Card Access:**
-   - Initialize `SPI3_HOST` in standard SPI mode for SD card only (CS = GPIO 21)
-   - Read the image file from SD into PSRAM
-   - Unmount the SD card filesystem
-   - Call `spi_bus_remove_device()` then `spi_bus_free()` to fully release the bus
-
-2. **Phase 2 — Display Access:**
-   - Re-initialize `SPI3_HOST` with the display configuration (as currently done in `comm.c`)
-   - Register display device with CS0/CS1
-   - Transfer framebuffer and trigger refresh
-   - Optionally tear down again if SD access is needed post-refresh
-
-### Pros
-- Zero chance of bus contention — only one device exists on the bus at any time
-- Clean state transitions — no risk of lingering device configuration conflicts
-- No shared-bus mutex needed
-
-### Cons
-- SPI bus init/teardown takes time and is error-prone
-- More complex lifecycle management
-- Can't access SD card during display refresh (bus is configured for display)
-- More code to maintain
-
-### Estimated Code Changes
-- `comm.c` / `comm.h`: Add `deinitSpi()` function, add SD card init function
-- `main.cpp`: Orchestrate the two-phase bus lifecycle
-- New `SDCardManager.cpp/.h`: SD init/deinit with bus ownership
-
----
-
-## Approach 3: Use a Second Hardware SPI Bus (SPI2_HOST) with GPIO Rerouting
-
-**Complexity: High | Hardware Changes: Required | Risk: Medium**
-
-### How It Works
-
-The ESP32-S3 has **two usable SPI peripherals**: `SPI2_HOST` and `SPI3_HOST`. If the SD card's physical traces could be rerouted (or an external SD card breakout wired) to different GPIO pins, the SD card could run on `SPI2_HOST` independently.
-
-### Implementation Steps
-
-1. **Hardware modification**: Wire an external SD card breakout board to unused GPIO pins:
-   - SD_CLK → e.g., GPIO 12
-   - SD_MOSI → e.g., GPIO 11
-   - SD_MISO → e.g., GPIO 10
-   - SD_CS → e.g., GPIO 14
-
-   (These are potentially available — not used by display, busy, reset, or load switch)
-
-2. **Initialize SPI2_HOST** for the SD card on these alternate pins
-3. **Keep SPI3_HOST** exclusively for the display (no changes to existing code)
-
-### Pros
-- Complete electrical isolation — both devices can operate truly simultaneously
-- No CS management needed between devices
-- Existing display code remains completely untouched
-- Can stream from SD card while display refreshes
-
-### Cons
-- **Requires soldering / hardware modification** — the on-board SD slot is hardwired to the display SPI pins
-- Need to verify which GPIO pins are actually broken out on the board's headers/pads
-- External SD card breakout board needed
-- More complex wiring
-
-### GPIO Availability (ESP32-S3, not used by current firmware)
-
-| GPIO | Status | Notes |
-|------|--------|-------|
-| 1    | Likely free | Check board schematic |
-| 2    | Likely free | Check board schematic |
-| 3    | Likely free | Check board schematic |
-| 4    | Likely free | Check board schematic |
-| 5    | Likely free | Check board schematic |
-| 8    | Likely free | Check board schematic |
-| 10   | Likely free | Check board schematic |
-| 11   | Likely free | Check board schematic |
-| 12   | Likely free | Check board schematic |
-| 14   | Likely free | Check board schematic |
-| 15   | Likely free | Check board schematic |
-| 16   | Likely free | Check board schematic |
-
-**Note:** Without the board schematic, we can't confirm which GPIOs are actually broken out to pads/headers. The ESP32-133C02 is a Good-Display board and some pins may be used for internal routing.
-
----
-
-## Approach 4: SDMMC Peripheral (1-bit SD Mode) via GPIO Matrix
-
-**Complexity: High | Hardware Changes: Possibly Required | Risk: High**
-
-### How It Works
-
-The ESP32-S3 has a dedicated **SDMMC peripheral** separate from SPI. In 1-bit SD mode, it only needs 3 signals (CMD, CLK, D0). If the ESP32-S3's GPIO matrix can route the SDMMC peripheral to GPIO 41 (CMD), 9 (CLK), and 40 (D0), this could work without hardware changes.
-
-### Key Question
-
-The ESP32-S3's SDMMC peripheral typically uses fixed pins (GPIO 34-39 range). Whether the GPIO matrix allows remapping to GPIO 9/40/41 needs verification against the ESP32-S3 TRM.
-
-### Pros
-- Completely separate peripheral — no SPI bus sharing
-- Hardware-accelerated SD protocol (potentially faster)
-- If it works with existing pins, no hardware changes needed
-
-### Cons
-- ESP32-S3 SDMMC may not support arbitrary GPIO remapping (unlike SPI which uses the GPIO matrix freely)
-- GPIO 9 and 40/41 may conflict with the SPI peripheral even if SDMMC is on a different peripheral, since they're electrically shared
-- High risk of incompatibility
-- Less community support / documentation for this configuration
-
-### Verdict
-
-This approach is **unlikely to work** without hardware changes because:
-1. The electrical signals would still conflict with the display's SPI peripheral
-2. SDMMC and SPI use different signaling protocols — the display would see garbage on its data lines when SDMMC is active
-
----
-
-## Recommendation
-
-**Approach 1 (Shared SPI Bus with ESP-IDF Device Multiplexing)** is the clear winner:
-
-1. **No hardware changes** — works with the existing board as-is
-2. **Minimal code changes** — ESP-IDF's SPI driver is designed for multi-device buses
-3. **Natural fit for e-ink** — the display only needs the bus briefly, leaving long idle windows for SD access
-4. **Low risk** — well-documented pattern in ESP-IDF with many community examples
-5. **The display doesn't use true QSPI** — so there's no mode-switching complexity
-
-### Proposed Boot Flow with SD Card
+Four features to implement, with clear dependencies between them:
 
 ```
-Power On
-  │
-  ├── Initialize SPI3_HOST bus (once)
-  ├── Register display device (CS0=18, CS1=17)
-  ├── Register SD card device (CS=21)
-  │
-  ├── Mount SD card filesystem
-  ├── Read image file from SD → PSRAM buffer
-  ├── Unmount SD card (optional, keeps CS high)
-  │
-  ├── Initialize EPD (send init commands via CS0/CS1)
-  ├── Transfer framebuffer to display via QSPI
-  ├── Trigger e-ink refresh (~20 seconds)
-  │
-  ├── (Optional) Access SD card again during refresh
-  │
-  └── Deep sleep
+  1. Config & Storage       (foundation — other features depend on this)
+      |
+      ├── 2. HTTP Folder Image Source + Ordered Cycling
+      ├── 3. Dithering Algorithm Selector
+      └── 4. Timed Deep Sleep / Wake Interval
 ```
 
-### Fallback
+---
 
-If Approach 1 encounters unexpected issues (e.g., the SD card library fights with the existing SPI device config), **Approach 2** (teardown/rebuild) is a reliable fallback that still requires zero hardware changes.
+## Feature 1: Expand ApplicationConfig & Web Interface
+
+### Why first
+Every other feature needs new config fields stored in NVS and exposed in the web UI. Build the storage layer once, then each feature plugs into it.
+
+### New config fields (ApplicationConfig.h)
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `folderUrl[300]` | char[] | `""` | HTTP URL to a directory listing page (replaces single imageUrl for folder mode) |
+| `ditherMode` | uint8_t | `0` | 0 = Floyd-Steinberg, 1 = Atkinson, 2 = Ordered (Bayer 8x8), 3 = None (nearest) |
+| `sleepMinutes` | uint16_t | `0` | Minutes between deep-sleep wakes. 0 = stay awake (current behaviour: 10-min server then permanent sleep) |
+| `imageChangeMinutes` | uint16_t | `30` | How often (minutes) to advance to the next image in the folder |
+
+### Separately in NVS (changes every cycle, not part of the main config blob)
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `img_index` | uint16_t | Current position in the image list. Survives deep sleep. Wraps to 0 when it reaches the end. |
+
+### Web interface additions (config.html)
+
+Add a new **"Display Settings"** section between WiFi config and Upload:
+
+```
+┌─────────────────────────────────────┐
+│       E-Ink Display Setup           │
+├─────────────────────────────────────┤
+│ WiFi Network:    [______________]   │
+│ WiFi Password:   [______________]   │
+│ Image URL:       [______________]   │  ← single image (existing)
+│                                     │
+│ ── Image Folder (optional) ──       │  ← NEW section
+│ Folder URL:      [______________]   │
+│   e.g. http://192.168.1.10/photos/  │
+│   Serves an HTML directory listing  │
+│   or a JSON array of filenames.     │
+│                                     │
+│ ── Display Settings ──              │  ← NEW section
+│ Dithering:  [Floyd-Steinberg  ▼]    │
+│ Change image every: [30 min   ▼]    │
+│ Wake from sleep every: [1 hour ▼]   │
+│                                     │
+│ [Save Configuration]                │
+├─────────────────────────────────────┤
+│ Upload Local Image                  │
+│ ...                                 │
+└─────────────────────────────────────┘
+```
+
+New template placeholders: `{{CURRENT_FOLDER_URL}}`, `{{CURRENT_DITHER_MODE}}`, `{{CURRENT_SLEEP_MINUTES}}`, `{{CURRENT_IMAGE_CHANGE_MINUTES}}`
+
+### ConfigurationServer changes
+- `/save` endpoint: read the new form fields, populate config, persist to NVS
+- Template processor: inject current values into dropdowns/fields
+
+### Files changed
+- `ApplicationConfig.h` — add fields
+- `ApplicationConfigStorage.cpp` — NVS read/write of new fields + `img_index`
+- `ConfigurationServer.cpp/.h` — new form fields, /save handler, template vars
+- `data/config.html` — new HTML sections
+
+---
+
+## Feature 2: HTTP Folder Image Source + Ordered Cycling
+
+### Approach: HTTP directory listing
+
+**Why HTTP instead of SMB/CIFS?**
+ESP32 has no production-quality SMB client library. HTTP is universal — works with any NAS (Synology, QNAP, TrueNAS all have built-in HTTP file serving), any `python3 -m http.server`, nginx `autoindex`, Apache, or even a Raspberry Pi. Zero extra software needed on most setups.
+
+The user provides a `folderUrl` like `http://192.168.1.10/photos/`. The device:
+
+1. **Fetches the directory page** (GET folderUrl)
+2. **Parses image links** from the HTML response — extract all `href="..."` values ending in `.jpg`, `.jpeg`, `.png`, `.bmp`
+3. **Sorts alphabetically** so the order is deterministic
+4. **Reads `img_index` from NVS** — knows which image it's up to
+5. **Downloads that image** (GET folderUrl + filename)
+6. **Processes and displays it** using the existing decode/dither/render pipeline
+7. **Increments `img_index`** in NVS (wraps to 0 at end of list)
+
+### Priority order (ImageScreen::render)
+
+```
+1. LittleFS local image (uploaded via web UI)       ← highest, same as now
+2. HTTP folder (if folderUrl is set)                 ← NEW
+3. Single image URL (if imageUrl is set)             ← existing fallback
+4. Nothing → show info screen
+```
+
+### Parsing strategy
+
+Support two response formats so it works everywhere:
+
+**Format A — HTML directory listing** (nginx autoindex, Apache, Python http.server):
+```html
+<a href="sunset.jpg">sunset.jpg</a>
+<a href="mountains.png">mountains.png</a>
+```
+Parse: scan for `href="..."` where the value ends in an image extension.
+
+**Format B — JSON array** (for advanced users who want explicit control):
+```json
+["sunset.jpg", "mountains.png", "night_sky.bmp"]
+```
+Parse: if response starts with `[`, treat as JSON array of filenames.
+
+### New files
+- `FolderImageSource.cpp/.h` — fetches directory, parses image list, downloads by index
+
+### Modified files
+- `ImageScreen.cpp/.h` — add `loadFromFolder()` between LittleFS and single-URL download
+- `ApplicationConfigStorage.cpp` — read/write `img_index` to NVS
+
+### Memory consideration
+Only one image is in PSRAM at a time (same as current single-image flow). The directory listing is parsed into a simple array of filenames, then freed. Minimal extra memory.
+
+---
+
+## Feature 3: Dithering Algorithm Selector
+
+### Algorithms to implement
+
+| Mode | Name | Character | Best for |
+|------|------|-----------|----------|
+| 0 | **Floyd-Steinberg** | Smooth gradients, natural look | Photos, landscapes |
+| 1 | **Atkinson** | Higher contrast, lighter midtones, crisper edges | E-ink displays (classic Mac aesthetic) |
+| 2 | **Ordered (Bayer 8x8)** | Structured crosshatch pattern, no error diffusion | Fast rendering, stylised look |
+| 3 | **None (nearest colour)** | Hard colour blocks, no dithering at all | Logos, flat illustrations, vector graphics |
+
+### Implementation
+
+The current `ditherImage()` in `ImageScreen.cpp` is a single Floyd-Steinberg implementation. Refactor into a strategy:
+
+```cpp
+std::unique_ptr<ColorImageBitmaps>
+ImageScreen::ditherImage(uint16_t *rgb565Buffer, uint32_t width, uint32_t height) {
+    switch (config.ditherMode) {
+        case 1:  return ditherAtkinson(rgb565Buffer, width, height);
+        case 2:  return ditherOrdered(rgb565Buffer, width, height);
+        case 3:  return ditherNone(rgb565Buffer, width, height);
+        default: return ditherFloydSteinberg(rgb565Buffer, width, height);
+    }
+}
+```
+
+### Atkinson dithering
+Same structure as Floyd-Steinberg but different error diffusion kernel — only diffuses 6/8 (75%) of the error, which gives higher contrast and preserves whites better. Excellent for e-ink.
+
+```
+Error diffusion pattern:
+         *   1/8  1/8
+   1/8  1/8  1/8
+        1/8
+```
+
+### Ordered (Bayer 8x8) dithering
+Uses a threshold matrix instead of error diffusion. No error buffers needed — O(1) extra memory. Very fast.
+
+```cpp
+// For each pixel:
+//   threshold = bayer8x8[y%8][x%8] * (255/64);
+//   apply threshold to find nearest colour with bias
+```
+
+### None (nearest colour)
+Simply `findNearestColor(r, g, b)` for each pixel. No error diffusion. Sharp colour boundaries.
+
+### Files changed
+- `ImageScreen.cpp` — refactor `ditherImage()` into 4 methods, add switch on `config.ditherMode`
+- `ImageScreen.h` — declare new private methods
+
+---
+
+## Feature 4: Timed Deep Sleep & Wake Cycle
+
+### Current behaviour
+```
+Boot → display image → run web server 10 min → permanent deep sleep (no wake)
+```
+
+### New behaviour
+```
+Boot → check if it's time to change image
+     → if yes: advance img_index, fetch + display next image
+     → if no: skip display refresh (save power + reduce e-ink wear)
+     → run web server 10 min
+     → deep sleep for N minutes (timer wakeup)
+     → repeat
+```
+
+### Implementation
+
+**In `main.cpp` setup(), replace permanent sleep with timed sleep:**
+```cpp
+if (appConfig->sleepMinutes > 0) {
+    uint64_t sleepUs = (uint64_t)appConfig->sleepMinutes * 60ULL * 1000000ULL;
+    esp_sleep_enable_timer_wakeup(sleepUs);
+    printf("Deep sleep for %u minutes...\r\n", appConfig->sleepMinutes);
+} else {
+    printf("Permanent deep sleep (no timer). Reset to wake.\r\n");
+}
+esp_deep_sleep_start();
+```
+
+**Image change timing — use RTC memory counter:**
+```cpp
+RTC_DATA_ATTR static uint32_t minutesSinceLastChange = 0;
+```
+
+On each wake:
+1. `minutesSinceLastChange += sleepMinutes`
+2. If `minutesSinceLastChange >= imageChangeMinutes`:
+   - Advance `img_index` in NVS
+   - Reset counter to 0
+   - Download and display next image
+3. Else:
+   - Skip display refresh entirely (saves power and e-ink wear)
+   - Go straight to web server phase, then back to sleep
+
+### Dropdown values for the web UI
+
+**Wake from sleep every:**
+
+| Label | Value (minutes) |
+|-------|----------------|
+| Never (manual reset only) | 0 |
+| 15 minutes | 15 |
+| 30 minutes | 30 |
+| 1 hour | 60 |
+| 2 hours | 120 |
+| 4 hours | 240 |
+| 6 hours | 360 |
+| 12 hours | 720 |
+| 24 hours | 1440 |
+
+**Change image every:**
+
+| Label | Value (minutes) |
+|-------|----------------|
+| Every wake | 0 |
+| 15 minutes | 15 |
+| 30 minutes | 30 |
+| 1 hour | 60 |
+| 2 hours | 120 |
+| 6 hours | 360 |
+| 12 hours | 720 |
+| 24 hours | 1440 |
+
+### Files changed
+- `main.cpp` — replace permanent sleep with timed sleep, add image-change-interval logic
+- `ApplicationConfig.h` — `sleepMinutes`, `imageChangeMinutes`
+
+---
+
+## Implementation Order
+
+| Step | What | Depends on |
+|------|------|-----------|
+| 1 | Expand `ApplicationConfig` with all new fields | — |
+| 2 | Update `ApplicationConfigStorage` for new fields + `img_index` | Step 1 |
+| 3 | Update `config.html` with new UI sections (dropdowns, folder URL) | Step 1 |
+| 4 | Update `ConfigurationServer` to read/save new fields from form | Steps 1–3 |
+| 5 | Implement Atkinson, Ordered, and None dithering in `ImageScreen` | Step 1 |
+| 6 | Implement `FolderImageSource` (directory parse + ordered download) | Steps 1–2 |
+| 7 | Integrate folder source into `ImageScreen::render()` priority chain | Step 6 |
+| 8 | Implement timed deep sleep + image change interval in `main.cpp` | Steps 1–2 |
+| 9 | Test full cycle: wake → advance image → dither → display → sleep | All |
+
+### File summary
+
+| File | Action |
+|------|--------|
+| `ApplicationConfig.h` | Add `folderUrl`, `ditherMode`, `sleepMinutes`, `imageChangeMinutes` |
+| `ApplicationConfigStorage.cpp/.h` | Persist new fields + separate `img_index` counter |
+| `data/config.html` | Add folder URL field, dithering dropdown, two interval dropdowns |
+| `ConfigurationServer.cpp/.h` | Handle new form fields in `/save`, template replacement |
+| `ImageScreen.cpp/.h` | Refactor dithering into 4 algorithms, add `loadFromFolder()` |
+| `FolderImageSource.cpp/.h` | **NEW** — HTTP directory fetch, parse, download-by-index |
+| `main.cpp` | Timed sleep, image-change-interval logic, skip-refresh optimisation |

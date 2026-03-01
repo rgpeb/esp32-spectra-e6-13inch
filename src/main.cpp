@@ -19,6 +19,9 @@ DisplayType display;
 ApplicationConfigStorage configStorage;
 std::unique_ptr<ApplicationConfig> appConfig;
 
+// Survives deep sleep — tracks wake cycles for image change interval
+RTC_DATA_ATTR static uint16_t wakesSinceImageChange = 0;
+
 void initializeDefaultConfig() {
   std::unique_ptr<ApplicationConfig> storedConfig = configStorage.load();
   if (storedConfig) {
@@ -40,7 +43,7 @@ int displayCurrentScreen(bool isConnected) {
   }
 
   printf("Showing image screen... \r\n");
-  ImageScreen imageScreen(display, *appConfig);
+  ImageScreen imageScreen(display, *appConfig, configStorage);
   imageScreen.render();
   return imageScreen.nextRefreshInSeconds();
 }
@@ -63,6 +66,34 @@ void setup() {
   fflush(stdout);
 
   initializeDefaultConfig();
+
+  // --- Timer Wake Detection ---
+  esp_sleep_wakeup_cause_t wakeupCause = esp_sleep_get_wakeup_cause();
+  bool timerWake = (wakeupCause == ESP_SLEEP_WAKEUP_TIMER);
+
+  if (timerWake) {
+    printf("Timer wake-up detected.\r\n");
+
+    // Advance folder image index if enough time has passed
+    if (appConfig->hasFolderUrl() && appConfig->sleepMinutes > 0) {
+      wakesSinceImageChange++;
+      bool shouldChange =
+          (appConfig->imageChangeMinutes == 0) ||
+          ((uint32_t)wakesSinceImageChange * appConfig->sleepMinutes >=
+           appConfig->imageChangeMinutes);
+
+      if (shouldChange) {
+        uint16_t idx = configStorage.loadImageIndex();
+        configStorage.saveImageIndex(idx + 1);
+        wakesSinceImageChange = 0;
+        printf("Folder: advanced image index to %d\r\n", idx + 1);
+      } else {
+        printf("Image change: %d/%d minutes elapsed\r\n",
+               wakesSinceImageChange * appConfig->sleepMinutes,
+               appConfig->imageChangeMinutes);
+      }
+    }
+  }
 
   // --- SD Card Phase ---
   // The SD card shares SPI pins with the display, so we access it FIRST
@@ -96,108 +127,137 @@ void setup() {
     displayCurrentScreen(wifi.isConnected());
     printf("Image displayed successfully.\r\n");
 
-    // --- Web Server Phase: run silently for 10 minutes ---
-    Configuration serverConfig(appConfig->wifiSSID, appConfig->wifiPassword,
-                               appConfig->imageUrl);
-    ConfigurationServer server(serverConfig);
+    // --- Web Server Phase (skip on timer wake for fast sleep cycling) ---
+    if (!timerWake) {
+      Configuration serverConfig(appConfig->wifiSSID, appConfig->wifiPassword,
+                                 appConfig->imageUrl, appConfig->folderUrl,
+                                 appConfig->ditherMode, appConfig->sleepMinutes,
+                                 appConfig->imageChangeMinutes);
+      ConfigurationServer server(serverConfig);
 
-    bool useAP = !wifi.isConnected();
-    if (useAP) {
-      printf("WiFi failed. Starting Access Point mode...\r\n");
-    }
-
-    server.run(
-        [](const Configuration &config) {
-          printf("Configuration received: SSID=%s, URL=%s\r\n",
-                 config.ssid.c_str(), config.imageUrl.c_str());
-
-          strncpy(appConfig->wifiSSID, config.ssid.c_str(),
-                  sizeof(appConfig->wifiSSID) - 1);
-          strncpy(appConfig->wifiPassword, config.password.c_str(),
-                  sizeof(appConfig->wifiPassword) - 1);
-          strncpy(appConfig->imageUrl, config.imageUrl.c_str(),
-                  sizeof(appConfig->imageUrl) - 1);
-
-          if (configStorage.save(*appConfig)) {
-            printf("Configuration saved successfully to NVS.\r\n");
-          } else {
-            printf("ERROR: Failed to save configuration to NVS.\r\n");
-          }
-        },
-        useAP);
-
-    // Run web server for 10 minutes (600,000 ms) without touching the display
-    const unsigned long SERVER_TIMEOUT_MS = 10UL * 60UL * 1000UL;
-    unsigned long serverStart = millis();
-    printf("Web server running for 10 minutes. Upload images now!\r\n");
-    printf("Access it at: http://%s\r\n",
-           useAP ? "192.168.4.1" : WiFi.localIP().toString().c_str());
-
-    while (millis() - serverStart < SERVER_TIMEOUT_MS) {
-      server.handleRequests();
-
-      // Check if a new image was uploaded — refresh display immediately
-      if (server.hasNewImage()) {
-        server.clearNewImage();
-        printf("New image uploaded! Refreshing display...\r\n");
-        displayCurrentScreen(wifi.isConnected());
-        printf("Display refreshed with new image.\r\n");
+      bool useAP = !wifi.isConnected();
+      if (useAP) {
+        printf("WiFi failed. Starting Access Point mode...\r\n");
       }
 
-      delay(10);
-    }
+      server.run(
+          [](const Configuration &config) {
+            printf("Configuration received: SSID=%s, URL=%s, Folder=%s\r\n",
+                   config.ssid.c_str(), config.imageUrl.c_str(),
+                   config.folderUrl.c_str());
 
-    printf("Web server timeout reached. Entering permanent deep sleep.\r\n");
-    printf("Reset device to start web server again.\r\n");
+            strncpy(appConfig->wifiSSID, config.ssid.c_str(),
+                    sizeof(appConfig->wifiSSID) - 1);
+            strncpy(appConfig->wifiPassword, config.password.c_str(),
+                    sizeof(appConfig->wifiPassword) - 1);
+            strncpy(appConfig->imageUrl, config.imageUrl.c_str(),
+                    sizeof(appConfig->imageUrl) - 1);
+            strncpy(appConfig->folderUrl, config.folderUrl.c_str(),
+                    sizeof(appConfig->folderUrl) - 1);
+            appConfig->ditherMode = config.ditherMode;
+            appConfig->sleepMinutes = config.sleepMinutes;
+            appConfig->imageChangeMinutes = config.imageChangeMinutes;
+
+            if (configStorage.save(*appConfig)) {
+              printf("Configuration saved successfully to NVS.\r\n");
+            } else {
+              printf("ERROR: Failed to save configuration to NVS.\r\n");
+            }
+          },
+          useAP);
+
+      // Run web server for 10 minutes (600,000 ms)
+      const unsigned long SERVER_TIMEOUT_MS = 10UL * 60UL * 1000UL;
+      unsigned long serverStart = millis();
+      printf("Web server running for 10 minutes. Upload images now!\r\n");
+      printf("Access it at: http://%s\r\n",
+             useAP ? "192.168.4.1" : WiFi.localIP().toString().c_str());
+
+      while (millis() - serverStart < SERVER_TIMEOUT_MS) {
+        server.handleRequests();
+
+        if (server.hasNewImage()) {
+          server.clearNewImage();
+          printf("New image uploaded! Refreshing display...\r\n");
+          displayCurrentScreen(wifi.isConnected());
+          printf("Display refreshed with new image.\r\n");
+        }
+
+        delay(10);
+      }
+
+      printf("Web server timeout reached.\r\n");
+    } else {
+      printf("Timer wake — skipping web server.\r\n");
+    }
 
   } else {
     // No WiFi credentials — show image first, then start AP for setup
     printf("No WiFi credentials. Displaying image first...\r\n");
     displayCurrentScreen(false);
 
-    printf("Starting Access Point mode...\r\n");
-    Configuration serverConfig("", "", appConfig->imageUrl);
-    ConfigurationServer server(serverConfig);
-    server.run(
-        [](const Configuration &config) {
-          printf("Configuration received (AP mode): SSID=%s\r\n",
-                 config.ssid.c_str());
-          strncpy(appConfig->wifiSSID, config.ssid.c_str(),
-                  sizeof(appConfig->wifiSSID) - 1);
-          strncpy(appConfig->wifiPassword, config.password.c_str(),
-                  sizeof(appConfig->wifiPassword) - 1);
-          strncpy(appConfig->imageUrl, config.imageUrl.c_str(),
-                  sizeof(appConfig->imageUrl) - 1);
+    if (!timerWake) {
+      printf("Starting Access Point mode...\r\n");
+      Configuration serverConfig("", "", appConfig->imageUrl,
+                                 appConfig->folderUrl, appConfig->ditherMode,
+                                 appConfig->sleepMinutes,
+                                 appConfig->imageChangeMinutes);
+      ConfigurationServer server(serverConfig);
+      server.run(
+          [](const Configuration &config) {
+            printf("Configuration received (AP mode): SSID=%s\r\n",
+                   config.ssid.c_str());
+            strncpy(appConfig->wifiSSID, config.ssid.c_str(),
+                    sizeof(appConfig->wifiSSID) - 1);
+            strncpy(appConfig->wifiPassword, config.password.c_str(),
+                    sizeof(appConfig->wifiPassword) - 1);
+            strncpy(appConfig->imageUrl, config.imageUrl.c_str(),
+                    sizeof(appConfig->imageUrl) - 1);
+            strncpy(appConfig->folderUrl, config.folderUrl.c_str(),
+                    sizeof(appConfig->folderUrl) - 1);
+            appConfig->ditherMode = config.ditherMode;
+            appConfig->sleepMinutes = config.sleepMinutes;
+            appConfig->imageChangeMinutes = config.imageChangeMinutes;
 
-          if (configStorage.save(*appConfig)) {
-            printf("Configuration saved successfully from AP mode.\r\n");
-          }
-        },
-        true);
+            if (configStorage.save(*appConfig)) {
+              printf("Configuration saved successfully from AP mode.\r\n");
+            }
+          },
+          true);
 
-    // Run AP server for 10 minutes
-    const unsigned long SERVER_TIMEOUT_MS = 10UL * 60UL * 1000UL;
-    unsigned long serverStart = millis();
-    printf("AP server running for 10 minutes.\r\n");
+      // Run AP server for 10 minutes
+      const unsigned long SERVER_TIMEOUT_MS = 10UL * 60UL * 1000UL;
+      unsigned long serverStart = millis();
+      printf("AP server running for 10 minutes.\r\n");
 
-    while (millis() - serverStart < SERVER_TIMEOUT_MS) {
-      server.handleRequests();
+      while (millis() - serverStart < SERVER_TIMEOUT_MS) {
+        server.handleRequests();
 
-      if (server.hasNewImage()) {
-        server.clearNewImage();
-        printf("New image uploaded! Refreshing display...\r\n");
-        displayCurrentScreen(false);
-        printf("Display refreshed with new image.\r\n");
+        if (server.hasNewImage()) {
+          server.clearNewImage();
+          printf("New image uploaded! Refreshing display...\r\n");
+          displayCurrentScreen(false);
+          printf("Display refreshed with new image.\r\n");
+        }
+
+        delay(10);
       }
 
-      delay(10);
+      printf("AP server timeout.\r\n");
     }
-
-    printf("AP server timeout. Entering permanent deep sleep.\r\n");
   }
 
-  // Permanent deep sleep — only power reset wakes the device
-  printf("Going to deep sleep forever. Reset to wake.\r\n");
+  // --- Deep Sleep ---
+  if (appConfig->sleepMinutes > 0) {
+    uint64_t sleepUs =
+        (uint64_t)appConfig->sleepMinutes * 60ULL * 1000000ULL;
+    esp_sleep_enable_timer_wakeup(sleepUs);
+    printf("Timed deep sleep for %d minutes. Device will wake "
+           "automatically.\r\n",
+           appConfig->sleepMinutes);
+  } else {
+    printf("Permanent deep sleep. Reset to wake.\r\n");
+  }
   esp_deep_sleep_start();
 }
 
