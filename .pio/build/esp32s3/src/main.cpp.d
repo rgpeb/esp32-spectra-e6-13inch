@@ -302,7 +302,7 @@
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/mbedtls/port/include/aes/esp_aes.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/aes_types.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/mbedtls/mbedtls/include/mbedtls/error.h \
- src/WiFiConnection.h src/battery.h \
+ src/SDCardManager.h src/WiFiConnection.h src/battery.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/driver/include/driver/rtc_io.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/include/soc/rtc_io_periph.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/rtc_io_channel.h \

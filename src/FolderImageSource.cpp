@@ -7,14 +7,15 @@
 String FolderImageSource::fetchDirectoryListing(const String &url) {
   HTTPClient http;
 
+  std::unique_ptr<WiFiClient> client;
   if (url.startsWith("https://")) {
-    WiFiClientSecure *client = new WiFiClientSecure;
-    client->setInsecure();
-    http.begin(*client, url);
+    auto secureClient = new WiFiClientSecure;
+    secureClient->setInsecure();
+    client.reset(secureClient);
   } else {
-    WiFiClient *client = new WiFiClient;
-    http.begin(*client, url);
+    client.reset(new WiFiClient);
   }
+  http.begin(*client, url);
 
   http.setTimeout(10000);
 

@@ -522,7 +522,17 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodeJPG(uint8_t *data,
   TJpgDec.setCallback(jpgOutput);
 
   uint16_t w = 0, h = 0;
-  TJpgDec.getJpgSize(&w, &h, data, dataSize);
+  uint8_t res = TJpgDec.getJpgSize(&w, &h, data, dataSize);
+  if (res != 0) {
+    Serial.printf("JPEG Error: Failed to get size (Error: %d, DataSize: %d)\n",
+                  res, dataSize);
+    if (dataSize >= 4) {
+      Serial.printf("Buffer Header: %02X %02X %02X %02X\n", data[0], data[1],
+                    data[2], data[3]);
+    }
+    free(jpgRgb565Buffer);
+    return nullptr;
+  }
 
   // Calculate scale factor to reduce PSRAM allocation for huge images
   // TJpgDec only supports scaling down by 1, 2, 4, or 8.
@@ -538,7 +548,7 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodeJPG(uint8_t *data,
   h /= scale;
 
   if (TJpgDec.drawJpg(0, 0, data, dataSize) != 0) {
-    Serial.println("JPEG decode failed");
+    Serial.println("JPEG decode failed during draw");
     free(jpgRgb565Buffer);
     return nullptr;
   }
@@ -1031,6 +1041,11 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::loadFromFolder() {
       free(data); // Safe: we own this pointer now
       if (bitmaps)
         return bitmaps;
+      Serial.println("Folder: pinned image processing failed (bitmaps null)");
+    } else {
+      Serial.printf("Folder: pinned image fetch failed (Code: %d, Data: %s)\n",
+                    result ? result->httpCode : -1,
+                    (result && result->data) ? "exists" : "null");
     }
     Serial.println("Folder: pinned image failed, falling back to cycling");
   }

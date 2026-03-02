@@ -28,11 +28,15 @@ void initializeDefaultConfig() {
     appConfig = std::move(storedConfig);
     printf("Configuration loaded from persistent storage: \r\n");
     printf("  - WiFi SSID: %s\n", appConfig->wifiSSID);
-    printf("  - Scaling mode: %s\n",
-           appConfig->scalingMode == SCALE_FILL ? "FILL" : "FIT");
+    printf("  - Scaling mode: %s (%d)\n",
+           appConfig->scalingMode == SCALE_FILL ? "FILL" : "FIT",
+           appConfig->scalingMode);
+    printf("  - Pinned Image: %s\n", appConfig->pinnedImageUrl);
+    printf("  - Folder URL: %s\n", appConfig->folderUrl);
   } else {
     appConfig.reset(new ApplicationConfig());
     printf("Using default configuration (no stored config found) \r\n");
+    printf("  - Default Scaling mode: %d\n", appConfig->scalingMode);
   }
 }
 
@@ -155,14 +159,24 @@ void setup() {
 
             strncpy(appConfig->wifiSSID, config.ssid.c_str(),
                     sizeof(appConfig->wifiSSID) - 1);
+            appConfig->wifiSSID[sizeof(appConfig->wifiSSID) - 1] = '\0';
+
             strncpy(appConfig->wifiPassword, config.password.c_str(),
                     sizeof(appConfig->wifiPassword) - 1);
+            appConfig->wifiPassword[sizeof(appConfig->wifiPassword) - 1] = '\0';
+
             strncpy(appConfig->imageUrl, config.imageUrl.c_str(),
                     sizeof(appConfig->imageUrl) - 1);
+            appConfig->imageUrl[sizeof(appConfig->imageUrl) - 1] = '\0';
+
             strncpy(appConfig->folderUrl, config.folderUrl.c_str(),
                     sizeof(appConfig->folderUrl) - 1);
+            appConfig->folderUrl[sizeof(appConfig->folderUrl) - 1] = '\0';
+
             strncpy(appConfig->pinnedImageUrl, config.pinnedImageUrl.c_str(),
                     sizeof(appConfig->pinnedImageUrl) - 1);
+            appConfig->pinnedImageUrl[sizeof(appConfig->pinnedImageUrl) - 1] =
+                '\0';
             appConfig->ditherMode = config.ditherMode;
             appConfig->scalingMode = config.scalingMode;
             appConfig->sleepMinutes = config.sleepMinutes;
@@ -179,6 +193,7 @@ void setup() {
       server.setOnPinCallback([](const String &pinnedUrl) {
         strncpy(appConfig->pinnedImageUrl, pinnedUrl.c_str(),
                 sizeof(appConfig->pinnedImageUrl) - 1);
+        appConfig->pinnedImageUrl[sizeof(appConfig->pinnedImageUrl) - 1] = '\0';
         configStorage.save(*appConfig);
         printf("Pinned image saved to NVS: %s\r\n", pinnedUrl.c_str());
       });
@@ -234,14 +249,24 @@ void setup() {
                    config.ssid.c_str());
             strncpy(appConfig->wifiSSID, config.ssid.c_str(),
                     sizeof(appConfig->wifiSSID) - 1);
+            appConfig->wifiSSID[sizeof(appConfig->wifiSSID) - 1] = '\0';
+
             strncpy(appConfig->wifiPassword, config.password.c_str(),
                     sizeof(appConfig->wifiPassword) - 1);
+            appConfig->wifiPassword[sizeof(appConfig->wifiPassword) - 1] = '\0';
+
             strncpy(appConfig->imageUrl, config.imageUrl.c_str(),
                     sizeof(appConfig->imageUrl) - 1);
+            appConfig->imageUrl[sizeof(appConfig->imageUrl) - 1] = '\0';
+
             strncpy(appConfig->folderUrl, config.folderUrl.c_str(),
                     sizeof(appConfig->folderUrl) - 1);
+            appConfig->folderUrl[sizeof(appConfig->folderUrl) - 1] = '\0';
+
             strncpy(appConfig->pinnedImageUrl, config.pinnedImageUrl.c_str(),
                     sizeof(appConfig->pinnedImageUrl) - 1);
+            appConfig->pinnedImageUrl[sizeof(appConfig->pinnedImageUrl) - 1] =
+                '\0';
             appConfig->ditherMode = config.ditherMode;
             appConfig->scalingMode = config.scalingMode;
             appConfig->sleepMinutes = config.sleepMinutes;

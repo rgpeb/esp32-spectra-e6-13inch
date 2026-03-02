@@ -142,13 +142,17 @@ void ConfigurationServer::setupWebServer() {
         this->handleUpload(request, filename, index, data, len, final);
       });
 
-  server->on("/api/folder-images", HTTP_GET,
+  server->on(
+      "/api/folder-images", HTTP_GET,
+      [this](AsyncWebServerRequest *request) { handleFolderImages(request); });
+  server->on(
+      "/api/pin-image", HTTP_POST,
+      [this](AsyncWebServerRequest *request) { handlePinImage(request); });
+  server->on("/api/refresh-display", HTTP_POST,
              [this](AsyncWebServerRequest *request) {
-               handleFolderImages(request);
-             });
-  server->on("/api/pin-image", HTTP_POST,
-             [this](AsyncWebServerRequest *request) {
-               handlePinImage(request);
+               refreshRequested = true;
+               Serial.println("Display refresh requested via web UI");
+               request->send(200, "application/json", "{\"ok\":true}");
              });
 
   server->on("/clear", HTTP_POST, [this](AsyncWebServerRequest *request) {
@@ -201,19 +205,28 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     if (request->hasParam("folderUrl", true))
       config.folderUrl = request->getParam("folderUrl", true)->value();
     if (request->hasParam("ditherMode", true))
-      config.ditherMode = request->getParam("ditherMode", true)->value().toInt();
+      config.ditherMode =
+          request->getParam("ditherMode", true)->value().toInt();
+    if (request->hasParam("scalingMode", true))
+      config.scalingMode =
+          request->getParam("scalingMode", true)->value().toInt();
     if (request->hasParam("sleepMinutes", true))
-      config.sleepMinutes = request->getParam("sleepMinutes", true)->value().toInt();
+      config.sleepMinutes =
+          request->getParam("sleepMinutes", true)->value().toInt();
     if (request->hasParam("imageChangeMinutes", true))
-      config.imageChangeMinutes = request->getParam("imageChangeMinutes", true)->value().toInt();
+      config.imageChangeMinutes =
+          request->getParam("imageChangeMinutes", true)->value().toInt();
     if (request->hasParam("pinnedImageUrl", true))
-      config.pinnedImageUrl = request->getParam("pinnedImageUrl", true)->value();
+      config.pinnedImageUrl =
+          request->getParam("pinnedImageUrl", true)->value();
 
-    // Auto-clear pin if folder URL changed
-    if (config.folderUrl != currentConfiguration.folderUrl) {
-      config.pinnedImageUrl = "";
+    /*
+    // Auto-clear pin if folder URL changed — keeping it for now per user
+    preference to stick to image if (config.folderUrl !=
+    currentConfiguration.folderUrl) { config.pinnedImageUrl = "";
       Serial.println("Folder URL changed — pinned image cleared");
     }
+    */
 
     Serial.println("Configuration received");
     request->send(200, "text/plain", "OK");
@@ -223,7 +236,8 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     request->send(400, "text/plain", "Missing parameters");
   }
 
-  stop();
+  // Server stops removed — let the server stay alive for more pinning/cycle
+  // checks stop();
 }
 
 void ConfigurationServer::handleNotFound(AsyncWebServerRequest *request) {
@@ -248,7 +262,8 @@ bool ConfigurationServer::loadHtmlTemplate() {
   return true;
 }
 
-static void setSelected(String &html, const String &placeholder, bool selected) {
+static void setSelected(String &html, const String &placeholder,
+                        bool selected) {
   html.replace(placeholder, selected ? "selected" : "");
 }
 
@@ -258,7 +273,8 @@ String ConfigurationServer::getConfigurationPage() {
   html.replace("{{CURRENT_PASSWORD}}", currentConfiguration.password);
   html.replace("{{CURRENT_IMAGE_URL}}", currentConfiguration.imageUrl);
   html.replace("{{CURRENT_FOLDER_URL}}", currentConfiguration.folderUrl);
-  html.replace("{{CURRENT_PINNED_IMAGE_URL}}", currentConfiguration.pinnedImageUrl);
+  html.replace("{{CURRENT_PINNED_IMAGE_URL}}",
+               currentConfiguration.pinnedImageUrl);
 
   // Dithering dropdown
   uint8_t dm = currentConfiguration.ditherMode;
@@ -266,6 +282,11 @@ String ConfigurationServer::getConfigurationPage() {
   setSelected(html, "{{DITHER_SEL_1}}", dm == 1);
   setSelected(html, "{{DITHER_SEL_2}}", dm == 2);
   setSelected(html, "{{DITHER_SEL_3}}", dm == 3);
+
+  // Scaling Mode dropdown
+  uint8_t sm = currentConfiguration.scalingMode;
+  setSelected(html, "{{SCALE_SEL_0}}", sm == 0);
+  setSelected(html, "{{SCALE_SEL_1}}", sm == 1);
 
   // Image change interval dropdown
   uint16_t ic = currentConfiguration.imageChangeMinutes;

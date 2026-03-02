@@ -375,8 +375,7 @@
 
             <div class="form-group">
                 <label for="imageUrl">Single Image URL <span class="optional-label">(optional)</span></label>
-                <input type="text" id="imageUrl" name="imageUrl"
-                    placeholder="https://example.com/image.jpg"
+                <input type="text" id="imageUrl" name="imageUrl" placeholder="https://example.com/image.jpg"
                     value="{{CURRENT_IMAGE_URL}}" autocomplete="off" autocapitalize="none" autocorrect="off">
                 <small style="color: #6b7280; font-size: 12px; margin-top: 4px; display: block;">
                     Direct link to a single image (JPEG, PNG, BMP). Used when no local image or folder is set.
@@ -385,8 +384,7 @@
 
             <div class="form-group">
                 <label for="folderUrl">Image Folder URL <span class="optional-label">(optional)</span></label>
-                <input type="text" id="folderUrl" name="folderUrl"
-                    placeholder="http://192.168.1.10/photos/"
+                <input type="text" id="folderUrl" name="folderUrl" placeholder="http://192.168.1.10/photos/"
                     value="{{CURRENT_FOLDER_URL}}" autocomplete="off" autocapitalize="none" autocorrect="off">
                 <small style="color: #6b7280; font-size: 12px; margin-top: 4px; display: block;">
                     HTTP server directory with images. The device will cycle through them in order.
@@ -407,8 +405,7 @@
                         background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3);
                         border-radius: 8px; font-size: 13px; color: #1d4ed8;">
                         <strong>Pinned:</strong> <span id="pinnedName"></span>
-                        <button type="button" id="unpinBtn"
-                            style="float: right; background: #ef4444; color: white; border: none;
+                        <button type="button" id="unpinBtn" style="float: right; background: #ef4444; color: white; border: none;
                             border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px;">
                             Unpin
                         </button>
@@ -434,6 +431,18 @@
                     <option value="2" {{DITHER_SEL_2}}>Ordered / Bayer (crosshatch pattern)</option>
                     <option value="3" {{DITHER_SEL_3}}>None (flat nearest colour)</option>
                 </select>
+            </div>
+
+            <div class="form-group">
+                <label for="scalingMode">Scaling Mode</label>
+                <select id="scalingMode" name="scalingMode">
+                    <option value="1" {{SCALE_SEL_1}}>Fill (Crop to completely cover screen)</option>
+                    <option value="0" {{SCALE_SEL_0}}>Fit (Preserve entire image, add white bars)</option>
+                </select>
+                <small style="color: #6b7280; font-size: 12px; margin-top: 4px; display: block;">
+                    Applies to landscape or non-matching aspect ratio images. Fill fills the screen fully; Fit
+                    letterboxes it.
+                </small>
             </div>
 
             <div class="form-group">
@@ -467,6 +476,11 @@
 
             <button type="submit" class="btn" id="submitBtn">Save Configuration</button>
         </form>
+
+        <button type="button" class="btn" id="refreshBtn"
+            style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); margin-top: 12px;">
+            ⚡ Change Image Now
+        </button>
 
         <hr style="border: 0; border-top: 1px solid rgba(0,0,0,0.1); margin: 30px 0;">
 
@@ -523,6 +537,7 @@
                 formData.append('imageUrl', imageUrl);
                 formData.append('folderUrl', folderUrl);
                 formData.append('ditherMode', ditherMode);
+                formData.append('scalingMode', document.getElementById('scalingMode').value);
                 formData.append('imageChangeMinutes', imageChangeMinutes);
                 formData.append('sleepMinutes', sleepMinutes);
                 formData.append('pinnedImageUrl', document.getElementById('pinnedImageUrl').value);
@@ -760,6 +775,33 @@
                 statusDiv.className = 'status error';
                 statusDiv.textContent = 'Failed to unpin: ' + error.message;
                 statusDiv.style.display = 'flex';
+            }
+        });
+
+        // --- Change Image Now ---
+        document.getElementById('refreshBtn').addEventListener('click', async function () {
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Refreshing display...';
+            var statusDiv = document.getElementById('status');
+            statusDiv.className = 'status loading';
+            statusDiv.textContent = 'Requesting display refresh...';
+            statusDiv.style.display = 'flex';
+
+            try {
+                var response = await fetch('/api/refresh-display', { method: 'POST' });
+                if (!response.ok) throw new Error('Refresh failed');
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '\u2713 Display is refreshing! This takes about 30 seconds.';
+                setTimeout(function () {
+                    btn.disabled = false;
+                    btn.textContent = '\u26a1 Change Image Now';
+                }, 30000);
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = 'Failed to refresh: ' + error.message;
+                btn.disabled = false;
+                btn.textContent = '\u26a1 Change Image Now';
             }
         });
     </script>

@@ -204,8 +204,9 @@
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal.h \
  .pio/libdeps/esp32s3/Adafruit\ BusIO/Adafruit_SPIDevice.h \
  .pio/libdeps/esp32s3/U8g2_for_Adafruit_GFX/src/u8g2_fonts.h \
- src/ApplicationConfig.h src/config_default.h src/DisplayAdapter.h \
- src/GDEP133C02.h src/comm.h \
+ src/ApplicationConfig.h src/config_default.h \
+ src/ApplicationConfigStorage.h src/DisplayAdapter.h src/GDEP133C02.h \
+ src/comm.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/driver/include/driver/spi_master.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/driver/include/driver/spi_common.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/include/soc/lldesc.h \
@@ -285,4 +286,4 @@
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/mbedtls/port/include/aes/esp_aes.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/aes_types.h \
  C:/Users/DanW/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/mbedtls/mbedtls/include/mbedtls/error.h \
- src/Screen.h src/battery.h
+ src/Screen.h src/FolderImageSource.h src/battery.h

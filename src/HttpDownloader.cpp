@@ -10,26 +10,28 @@ std::unique_ptr<DownloadResult>
 HttpDownloader::download(const String &url, const String &cachedETag) {
   HTTPClient http;
 
+  std::unique_ptr<WiFiClient> client;
   if (url.startsWith("https://")) {
-    WiFiClientSecure *client = new WiFiClientSecure;
-    client->setInsecure(); // Allow HTTPS without certificate validation
-    http.begin(*client, url);
+    auto secureClient = new WiFiClientSecure;
+    secureClient->setInsecure();
+    client.reset(secureClient);
   } else {
-    WiFiClient *client = new WiFiClient;
-    http.begin(*client, url);
+    client.reset(new WiFiClient);
   }
+  http.begin(*client, url);
 
   auto result = std::unique_ptr<DownloadResult>(new DownloadResult());
 
   Serial.println("Requesting data from: " + url);
 
-  http.setTimeout(10000);
+  http.setTimeout(15000); // Increased timeout
 
   if (cachedETag.length() > 0) {
     http.addHeader("If-None-Match", cachedETag);
   }
 
-  const char *headerKeys[] = {"Content-Type", "Transfer-Encoding", "ETag"};
+  const char *headerKeys[] = {"Content-Type", "Content-Length",
+                              "Transfer-Encoding", "ETag"};
   size_t headerKeysSize = sizeof(headerKeys) / sizeof(char *);
   http.collectHeaders(headerKeys, headerKeysSize);
 
@@ -50,13 +52,15 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   }
 
   String newETag = http.header("ETag");
-  if (newETag.length() > 0) {
-    result->etag = newETag;
-  }
-
   String contentType = http.header("Content-Type");
+  int contentLength = http.getSize();
+
+  Serial.printf("HTTP Response: %s (%d bytes)\n", contentType.c_str(),
+                contentLength);
+
   contentType.toLowerCase();
-  if (!contentType.isEmpty() && contentType.indexOf("image") == -1) {
+  if (!contentType.isEmpty() && contentType.indexOf("image") == -1 &&
+      contentType.indexOf("text/html") == -1) {
     Serial.println("Unexpected content type: " + contentType);
     http.end();
     result->httpCode = -1;
@@ -80,6 +84,8 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
 
   if (result->size > 0) {
     Serial.printf("Downloaded %d bytes\n", result->size);
+  } else {
+    Serial.println("Warning: Downloaded 0 bytes");
   }
 
   return result;
@@ -99,10 +105,14 @@ HttpDownloader::downloadChunked(WiFiClient *stream) {
 
   result->size = 0;
 
-  while (stream->connected()) {
+  while (stream->connected() || stream->available()) {
     char chunkSizeBuffer[16];
     size_t lineLength = stream->readBytesUntil('\n', (uint8_t *)chunkSizeBuffer,
                                                sizeof(chunkSizeBuffer) - 1);
+
+    if (lineLength == 0 && !stream->available())
+      break;
+
     chunkSizeBuffer[lineLength] = '\0';
 
     if (lineLength > 0 && chunkSizeBuffer[lineLength - 1] == '\r') {
@@ -121,8 +131,8 @@ HttpDownloader::downloadChunked(WiFiClient *stream) {
     }
 
     if (result->size + chunkSize > bufferCapacity) {
-      bufferCapacity =
-          max(bufferCapacity * 2, (size_t)(result->size + chunkSize + 1024));
+      bufferCapacity = max(bufferCapacity + (256 * 1024),
+                           (size_t)(result->size + chunkSize + 1024));
 
       result->data = (uint8_t *)ps_realloc(result->data, bufferCapacity);
       if (!result->data) {
@@ -132,8 +142,19 @@ HttpDownloader::downloadChunked(WiFiClient *stream) {
       }
     }
 
-    size_t bytesRead =
-        stream->readBytes(result->data + result->size, chunkSize);
+    size_t bytesRead = 0;
+    while (bytesRead < chunkSize) {
+      size_t read = stream->read(result->data + result->size + bytesRead,
+                                 chunkSize - bytesRead);
+      if (read == 0) {
+        delay(10);
+        if (!stream->connected())
+          break;
+        continue;
+      }
+      bytesRead += read;
+    }
+
     if (bytesRead != chunkSize) {
       Serial.printf("Warning: Expected %ld bytes, got %d bytes\n", chunkSize,
                     bytesRead);
@@ -167,20 +188,31 @@ HttpDownloader::downloadRegular(WiFiClient *stream) {
   result->size = 0;
   const size_t chunkSize = 1024;
 
-  while (stream->available() > 0) {
+  // Wait for data to be available if connected
+  unsigned long start = millis();
+  while (stream->available() == 0 && stream->connected() &&
+         (millis() - start < 5000)) {
+    delay(10);
+  }
+
+  while (stream->available() > 0 || stream->connected()) {
     if (result->size + chunkSize > bufferCapacity) {
-      bufferCapacity = bufferCapacity * 2;
+      bufferCapacity += 256 * 1024;
       result->data = (uint8_t *)ps_realloc(result->data, bufferCapacity);
       if (!result->data) {
+        Serial.println("Failed to expand regular PSRAM buffer");
         result->httpCode = -1;
         return result;
       }
     }
 
-    size_t bytesRead =
-        stream->readBytes(result->data + result->size, chunkSize);
-    if (bytesRead == 0)
-      break;
+    size_t bytesRead = stream->read(result->data + result->size, chunkSize);
+    if (bytesRead == 0) {
+      if (!stream->connected())
+        break;
+      delay(10);
+      continue;
+    }
     result->size += bytesRead;
   }
   return result;

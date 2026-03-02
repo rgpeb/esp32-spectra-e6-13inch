@@ -16,6 +16,7 @@ struct Configuration {
   String folderUrl;
   String pinnedImageUrl;
   uint8_t ditherMode = 0;
+  uint8_t scalingMode = 0; // Default to FIT (Letterbox)
   uint16_t sleepMinutes = 0;
   uint16_t imageChangeMinutes = 30;
 
@@ -23,13 +24,13 @@ struct Configuration {
 
   Configuration(const String &ssid, const String &password,
                 const String &imageUrl, const String &folderUrl = "",
-                const String &pinnedImageUrl = "",
-                uint8_t ditherMode = 0, uint16_t sleepMinutes = 0,
+                const String &pinnedImageUrl = "", uint8_t ditherMode = 0,
+                uint8_t scalingMode = 0, uint16_t sleepMinutes = 0,
                 uint16_t imageChangeMinutes = 30)
       : ssid(ssid), password(password), imageUrl(imageUrl),
         folderUrl(folderUrl), pinnedImageUrl(pinnedImageUrl),
-        ditherMode(ditherMode), sleepMinutes(sleepMinutes),
-        imageChangeMinutes(imageChangeMinutes) {}
+        ditherMode(ditherMode), scalingMode(scalingMode),
+        sleepMinutes(sleepMinutes), imageChangeMinutes(imageChangeMinutes) {}
 };
 
 using OnSaveCallback = std::function<void(const Configuration &config)>;
@@ -55,6 +56,10 @@ public:
   bool hasNewImage() const { return newImageUploaded; }
   void clearNewImage() { newImageUploaded = false; }
 
+  // Returns true if the user pressed "Change Image Now"
+  bool isRefreshRequested() const { return refreshRequested; }
+  void clearRefreshRequest() { refreshRequested = false; }
+
 private:
   String deviceName;
   String wifiAccessPointName;
@@ -66,6 +71,7 @@ private:
   DNSServer *dnsServer;
   bool isServerRunning;
   bool newImageUploaded = false;
+  bool refreshRequested = false;
 
   String htmlTemplate;
   OnSaveCallback onSaveCallback;
