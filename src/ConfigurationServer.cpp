@@ -1,5 +1,6 @@
 #include "ConfigurationServer.h"
 
+#include "ApplicationConfig.h"
 #include "FolderImageSource.h"
 #include <LittleFS.h>
 #include <WiFi.h>
@@ -200,8 +201,8 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     config.ssid = request->getParam("ssid", true)->value();
     config.password = request->getParam("password", true)->value();
 
-    if (request->hasParam("imageUrl", true))
-      config.imageUrl = request->getParam("imageUrl", true)->value();
+    // Force single-image source URL to the Railway endpoint.
+    config.imageUrl = String(DEFAULT_IMAGE_URL);
     if (request->hasParam("folderUrl", true))
       config.folderUrl = request->getParam("folderUrl", true)->value();
     if (request->hasParam("ditherMode", true))
@@ -271,7 +272,7 @@ String ConfigurationServer::getConfigurationPage() {
   String html = htmlTemplate;
   html.replace("{{CURRENT_SSID}}", currentConfiguration.ssid);
   html.replace("{{CURRENT_PASSWORD}}", currentConfiguration.password);
-  html.replace("{{CURRENT_IMAGE_URL}}", currentConfiguration.imageUrl);
+  html.replace("{{CURRENT_IMAGE_URL}}", String(DEFAULT_IMAGE_URL));
   html.replace("{{CURRENT_FOLDER_URL}}", currentConfiguration.folderUrl);
   html.replace("{{CURRENT_PINNED_IMAGE_URL}}",
                currentConfiguration.pinnedImageUrl);

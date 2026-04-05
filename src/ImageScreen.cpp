@@ -28,7 +28,7 @@ String ImageScreen::getStoredImageETag() { return String(storedImageETag); }
 std::unique_ptr<DownloadResult> ImageScreen::download() {
   String storedETag = getStoredImageETag();
   Serial.println("Using stored ETag for request: '" + storedETag + "'");
-  auto result = downloader.download(String(config.imageUrl), storedETag);
+  auto result = downloader.download(String(DEFAULT_IMAGE_URL), storedETag);
 
   if (result->etag.length() > 0) {
     storeImageETag(result->etag);
@@ -1100,7 +1100,7 @@ void ImageScreen::render() {
   }
 
   // Priority 3: Single image URL
-  if (!bitmaps && strlen(config.imageUrl) > 0) {
+  if (!bitmaps) {
     auto downloadResult = download();
 
     if (downloadResult->httpCode == HTTP_CODE_NOT_MODIFIED) {
