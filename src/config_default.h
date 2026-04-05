@@ -6,6 +6,6 @@
 
 const char DEFAULT_WIFI_SSID[] = "";
 const char DEFAULT_WIFI_PASSWORD[] = "";
-const char DEFAULT_IMAGE_URL[] = "https://your-railway-domain.up.railway.app/device/current.jpg";
+const char DEFAULT_IMAGE_URL[] = "https://photo-host-production.up.railway.app/device/current.png";
 
 #endif  // CONFIG_DEFAULT_H
