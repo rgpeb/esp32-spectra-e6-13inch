@@ -157,6 +157,7 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   }
   outputFile.flush();
   outputFile.close();
+  Serial.println("Temp file close success");
 
   http.end();
   if (result->httpCode == -1) {
