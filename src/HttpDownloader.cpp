@@ -33,6 +33,7 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   if (cachedETag.length() > 0) {
     http.addHeader("If-None-Match", cachedETag);
   }
+  http.addHeader("Accept", "image/jpeg,image/jpg,image/png,image/*;q=0.8");
 
   const char *headerKeys[] = {"Content-Type", "Content-Length",
                               "Transfer-Encoding", "ETag"};
@@ -51,6 +52,7 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   if (httpCode != HTTP_CODE_OK) {
     Serial.printf("HTTP request failed with code: %d\n", httpCode);
     Serial.printf("HTTP error: %s\n", http.errorToString(httpCode).c_str());
+    result->errorDetail = "HTTP request failed before download body";
     http.end();
     return result;
   }
@@ -58,9 +60,11 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   String newETag = http.header("ETag");
   String contentType = http.header("Content-Type");
   int contentLength = http.getSize();
+  result->contentType = contentType;
 
-  Serial.printf("HTTP Response: %s (%d bytes)\n", contentType.c_str(),
-                contentLength);
+  Serial.printf("HTTP success: %d\n", httpCode);
+  Serial.printf("HTTP content type: %s\n", contentType.c_str());
+  Serial.printf("HTTP declared content length: %d\n", contentLength);
 
   contentType.toLowerCase();
   if (!contentType.isEmpty() && contentType.indexOf("image") == -1 &&
@@ -68,6 +72,7 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
     Serial.println("Unexpected content type: " + contentType);
     http.end();
     result->httpCode = -1;
+    result->errorDetail = "Unexpected non-image content type";
     return result;
   }
 
@@ -77,9 +82,11 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   WiFiClient *stream = http.getStreamPtr();
 
   if (isChunked) {
-    result = downloadChunked(stream);
+    result = downloadChunked(stream, contentLength > 0 ? (size_t)contentLength
+                                                       : 0);
   } else {
-    result = downloadRegular(stream);
+    result = downloadRegular(stream, contentLength > 0 ? (size_t)contentLength
+                                                       : 0);
   }
 
   http.end();
@@ -88,8 +95,12 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   } else {
     Serial.printf("Download pipeline failed after HTTP %d (internal error %d)\n",
                   httpCode, result->httpCode);
+    if (result->errorDetail.length() > 0) {
+      Serial.println("Download failure reason: " + result->errorDetail);
+    }
   }
   result->etag = newETag;
+  result->contentType = contentType;
 
   if (result->size > 0) {
     Serial.printf("Downloaded %d bytes\n", result->size);
@@ -101,14 +112,15 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
 }
 
 std::unique_ptr<DownloadResult>
-HttpDownloader::downloadChunked(WiFiClient *stream) {
+HttpDownloader::downloadChunked(WiFiClient *stream, size_t expectedSize) {
   auto result = std::unique_ptr<DownloadResult>(new DownloadResult());
 
-  size_t bufferCapacity = 400 * 1024;
+  size_t bufferCapacity = max((size_t)(400 * 1024), expectedSize + 1024);
   result->data = (uint8_t *)ps_malloc(bufferCapacity);
   if (!result->data) {
     Serial.println("Failed to allocate PSRAM buffer");
     result->httpCode = -1;
+    result->errorDetail = "PSRAM allocation failed for initial chunked buffer";
     return result;
   }
 
@@ -143,12 +155,14 @@ HttpDownloader::downloadChunked(WiFiClient *stream) {
       bufferCapacity = max(bufferCapacity + (256 * 1024),
                            (size_t)(result->size + chunkSize + 1024));
 
-      result->data = (uint8_t *)ps_realloc(result->data, bufferCapacity);
-      if (!result->data) {
+      uint8_t *expanded = (uint8_t *)ps_realloc(result->data, bufferCapacity);
+      if (!expanded) {
         Serial.println("Failed to expand PSRAM buffer");
         result->httpCode = -1;
+        result->errorDetail = "PSRAM expansion failed for chunked response";
         return result;
       }
+      result->data = expanded;
     }
 
     size_t bytesRead = 0;
@@ -177,20 +191,22 @@ HttpDownloader::downloadChunked(WiFiClient *stream) {
   if (result->size == 0) {
     Serial.println("No data received from chunked response");
     result->httpCode = -1;
+    result->errorDetail = "Chunked response delivered zero bytes";
     return result;
   }
   return result;
 }
 
 std::unique_ptr<DownloadResult>
-HttpDownloader::downloadRegular(WiFiClient *stream) {
+HttpDownloader::downloadRegular(WiFiClient *stream, size_t expectedSize) {
   auto result = std::unique_ptr<DownloadResult>(new DownloadResult());
 
-  size_t bufferCapacity = 400 * 1024;
+  size_t bufferCapacity = max((size_t)(400 * 1024), expectedSize + 1024);
   result->data = (uint8_t *)ps_malloc(bufferCapacity);
   if (!result->data) {
     Serial.println("Failed to allocate PSRAM buffer");
     result->httpCode = -1;
+    result->errorDetail = "PSRAM allocation failed for initial response buffer";
     return result;
   }
 
@@ -207,12 +223,14 @@ HttpDownloader::downloadRegular(WiFiClient *stream) {
   while (stream->available() > 0 || stream->connected()) {
     if (result->size + chunkSize > bufferCapacity) {
       bufferCapacity += 256 * 1024;
-      result->data = (uint8_t *)ps_realloc(result->data, bufferCapacity);
-      if (!result->data) {
+      uint8_t *expanded = (uint8_t *)ps_realloc(result->data, bufferCapacity);
+      if (!expanded) {
         Serial.println("Failed to expand regular PSRAM buffer");
         result->httpCode = -1;
+        result->errorDetail = "PSRAM expansion failed while downloading body";
         return result;
       }
+      result->data = expanded;
     }
 
     size_t bytesRead = stream->read(result->data + result->size, chunkSize);

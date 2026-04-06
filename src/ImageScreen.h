@@ -66,6 +66,7 @@ private:
   const uint8_t *smallFont;
   String ditheringServiceUrl;
   bool forceFreshFetch;
+  String lastDecodeError;
 
   std::unique_ptr<DownloadResult> download();
   std::unique_ptr<ColorImageBitmaps> processImageData(uint8_t *data,
