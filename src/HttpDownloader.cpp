@@ -83,7 +83,12 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   }
 
   http.end();
-  result->httpCode = httpCode;
+  if (result->httpCode >= 0) {
+    result->httpCode = httpCode;
+  } else {
+    Serial.printf("Download pipeline failed after HTTP %d (internal error %d)\n",
+                  httpCode, result->httpCode);
+  }
   result->etag = newETag;
 
   if (result->size > 0) {
