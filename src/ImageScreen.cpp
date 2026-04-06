@@ -944,6 +944,7 @@ ImageScreen::decodeJPG(const String &filename) {
   fs::File file = LittleFS.open(filename, FILE_READ);
   if (!file) {
     Serial.println("Failed to open file for JPEG decode");
+    lastDecodeError = "Failed to open cached JPEG file";
     return nullptr;
   }
 
@@ -951,12 +952,20 @@ ImageScreen::decodeJPG(const String &filename) {
   uint8_t *buffer = (uint8_t *)ps_malloc(size);
   if (!buffer) {
     Serial.println("Failed to allocate PSRAM for JPEG file buffer");
+    lastDecodeError = "PSRAM allocation failed for cached JPEG file";
     file.close();
     return nullptr;
   }
 
-  file.read(buffer, size);
+  const size_t bytesRead = file.read(buffer, size);
   file.close();
+  if (bytesRead != size) {
+    Serial.printf("Failed to read cached JPEG file fully (%u/%u)\n",
+                  (unsigned int)bytesRead, (unsigned int)size);
+    lastDecodeError = "Failed to read cached JPEG file";
+    free(buffer);
+    return nullptr;
+  }
 
   auto bitmaps = decodeJPG(buffer, size);
   free(buffer);
@@ -965,22 +974,27 @@ ImageScreen::decodeJPG(const String &filename) {
 }
 
 std::unique_ptr<ColorImageBitmaps> ImageScreen::processImageFile(File &file) {
+  lastDecodeError = "";
   if (!file) {
     Serial.println("Render aborted safely: file open failed");
+    lastDecodeError = "Cached file handle invalid";
     return nullptr;
   }
 
   uint8_t header[4];
   if (!file.seek(0)) {
     Serial.println("Render aborted safely: failed to seek cached file");
+    lastDecodeError = "Failed to seek cached file";
     return nullptr;
   }
   if (file.read(header, 4) != 4) {
     Serial.println("Render aborted safely: failed to read image header");
+    lastDecodeError = "Failed to read cached file header";
     return nullptr;
   }
   if (!file.seek(0)) {
     Serial.println("Render aborted safely: failed to rewind cached file");
+    lastDecodeError = "Failed to rewind cached file";
     return nullptr;
   }
 
@@ -992,22 +1006,27 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::processImageFile(File &file) {
   file.close(); // Close file so TJpgDec can open it
 
   if (header[0] == 0xFF && header[1] == 0xD8) {
+    Serial.println("Decode start: JPEG (from cached file)");
     return decodeJPG(filename);
   } else if (header[0] == 0x89 && header[1] == 'P' && header[2] == 'N' &&
              header[3] == 'G') {
+    Serial.println("Decode start: PNG (from cached file)");
     File reopenFile = LittleFS.open(filename, FILE_READ);
     if (!reopenFile) {
       Serial.println("Render aborted safely: file open failed for PNG decode");
+      lastDecodeError = "Failed to reopen cached PNG file";
       return nullptr;
     }
     auto bitmaps = decodePNG(reopenFile);
     reopenFile.close();
     return bitmaps;
   } else if (header[0] == 'B' && header[1] == 'M') {
+    Serial.println("Decode start: BMP (from cached file)");
     // BMP fallback to PSRAM
     File reopenFile = LittleFS.open(filename, FILE_READ);
     if (!reopenFile) {
       Serial.println("Render aborted safely: file open failed for BMP decode");
+      lastDecodeError = "Failed to reopen cached BMP file";
       return nullptr;
     }
     size_t fileSize = reopenFile.size();
@@ -1015,6 +1034,7 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::processImageFile(File &file) {
     if (!fileBuffer) {
       Serial.println(
           "Render aborted safely: PSRAM allocation failed for BMP file buffer");
+      lastDecodeError = "PSRAM allocation failed for cached BMP";
       reopenFile.close();
       return nullptr;
     }
@@ -1026,6 +1046,7 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::processImageFile(File &file) {
   }
 
   Serial.println("Unknown Image format in file");
+  lastDecodeError = "Unknown cached image format";
   return nullptr;
 }
 
@@ -1155,7 +1176,24 @@ void ImageScreen::render() {
     if (downloadResult->contentType.length() > 0) {
       Serial.println("Downloaded content type: " + downloadResult->contentType);
     }
-    bitmaps = processImageData(downloadResult->data, downloadResult->size);
+    if (downloadResult->filePath.length() > 0) {
+      Serial.println("Decode start: cached file " + downloadResult->filePath);
+      File imageFile = LittleFS.open(downloadResult->filePath, FILE_READ);
+      if (!imageFile) {
+        Serial.println("Decode failed: cached file open failed");
+        lastDecodeError = "Failed to open cached image file";
+      } else {
+        bitmaps = processImageFile(imageFile);
+        if (bitmaps) {
+          Serial.println("Decode success: image decoded from cached file");
+        } else {
+          Serial.println("Decode failed: cached file decode failed");
+        }
+      }
+      LittleFS.remove(downloadResult->filePath);
+    } else {
+      bitmaps = processImageData(downloadResult->data, downloadResult->size);
+    }
     if (!bitmaps) {
       Serial.println("Decode failed or render aborted safely after successful download");
       if (lastDecodeError.length() > 0) {
