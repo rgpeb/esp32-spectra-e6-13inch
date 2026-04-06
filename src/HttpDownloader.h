@@ -12,10 +12,11 @@ struct DownloadResult {
   String etag;
   String contentType;
   String errorDetail;
+  String filePath;
 
   DownloadResult()
       : data(nullptr), size(0), httpCode(0), etag(""), contentType(""),
-        errorDetail("") {}
+        errorDetail(""), filePath("") {}
 
   ~DownloadResult() {
     if (data != nullptr) {
@@ -31,10 +32,4 @@ class HttpDownloader {
 
   std::unique_ptr<DownloadResult> download(const String& url, const String& cachedETag = "");
   String urlEncode(const String& str);
-
- private:
-  std::unique_ptr<DownloadResult> downloadChunked(WiFiClient* stream,
-                                                  size_t expectedSize);
-  std::unique_ptr<DownloadResult> downloadRegular(WiFiClient* stream,
-                                                  size_t expectedSize);
 };

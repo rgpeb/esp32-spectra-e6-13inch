@@ -1,6 +1,12 @@
 #include "HttpDownloader.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <LittleFS.h>
+
+namespace {
+constexpr const char *kRemoteImageCachePath = "/remote_image_download.img";
+constexpr size_t kDownloadChunkSize = 2048;
+}
 
 HttpDownloader::HttpDownloader() {}
 
@@ -76,23 +82,69 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
     return result;
   }
 
-  String transferEncoding = http.header("Transfer-Encoding");
-  bool isChunked = transferEncoding.indexOf("chunked") != -1;
-
-  WiFiClient *stream = http.getStreamPtr();
-
-  if (isChunked) {
-    result = downloadChunked(stream, contentLength > 0 ? (size_t)contentLength
-                                                       : 0);
-  } else {
-    result = downloadRegular(stream, contentLength > 0 ? (size_t)contentLength
-                                                       : 0);
+  if (!LittleFS.begin(true)) {
+    Serial.println("Render aborted safely: failed to mount LittleFS for download cache");
+    result->httpCode = -1;
+    result->errorDetail = "LittleFS mount failed while preparing download cache";
+    http.end();
+    return result;
   }
 
+  if (LittleFS.exists(kRemoteImageCachePath)) {
+    LittleFS.remove(kRemoteImageCachePath);
+  }
+
+  fs::File outputFile = LittleFS.open(kRemoteImageCachePath, FILE_WRITE);
+  if (!outputFile) {
+    Serial.println("Render aborted safely: failed to create LittleFS download cache file");
+    result->httpCode = -1;
+    result->errorDetail = "Failed to open LittleFS cache file for HTTP body";
+    http.end();
+    return result;
+  }
+
+  WiFiClient *stream = http.getStreamPtr();
+  uint8_t ioBuffer[kDownloadChunkSize];
+  size_t totalWritten = 0;
+
+  while (http.connected() || stream->available()) {
+    const size_t available = stream->available();
+    const size_t bytesToRead =
+        available > 0 ? min(available, kDownloadChunkSize) : kDownloadChunkSize;
+    const size_t bytesRead = stream->readBytes(ioBuffer, bytesToRead);
+    if (bytesRead == 0) {
+      if (!http.connected()) {
+        break;
+      }
+      delay(5);
+      continue;
+    }
+    const size_t bytesWritten = outputFile.write(ioBuffer, bytesRead);
+    if (bytesWritten != bytesRead) {
+      Serial.printf("Render aborted safely: file write short (%u/%u)\n",
+                    (unsigned int)bytesWritten, (unsigned int)bytesRead);
+      result->httpCode = -1;
+      result->errorDetail = "LittleFS write failed while streaming HTTP body";
+      break;
+    }
+    totalWritten += bytesWritten;
+  }
+  outputFile.flush();
+  outputFile.close();
+
   http.end();
-  if (result->httpCode >= 0) {
-    result->httpCode = httpCode;
+  if (result->httpCode == -1) {
+    LittleFS.remove(kRemoteImageCachePath);
   } else {
+    result->size = totalWritten;
+    result->filePath = kRemoteImageCachePath;
+    Serial.printf("HTTP body streamed to LittleFS: %u bytes\n",
+                  (unsigned int)totalWritten);
+    Serial.printf("File saved successfully: %s\n", result->filePath.c_str());
+    result->httpCode = httpCode;
+  }
+
+  if (result->httpCode < 0) {
     Serial.printf("Download pipeline failed after HTTP %d (internal error %d)\n",
                   httpCode, result->httpCode);
     if (result->errorDetail.length() > 0) {
@@ -108,140 +160,6 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
     Serial.println("Warning: Downloaded 0 bytes");
   }
 
-  return result;
-}
-
-std::unique_ptr<DownloadResult>
-HttpDownloader::downloadChunked(WiFiClient *stream, size_t expectedSize) {
-  auto result = std::unique_ptr<DownloadResult>(new DownloadResult());
-
-  size_t bufferCapacity = max((size_t)(400 * 1024), expectedSize + 1024);
-  result->data = (uint8_t *)ps_malloc(bufferCapacity);
-  if (!result->data) {
-    Serial.println("Failed to allocate PSRAM buffer");
-    result->httpCode = -1;
-    result->errorDetail = "PSRAM allocation failed for initial chunked buffer";
-    return result;
-  }
-
-  result->size = 0;
-
-  while (stream->connected() || stream->available()) {
-    char chunkSizeBuffer[16];
-    size_t lineLength = stream->readBytesUntil('\n', (uint8_t *)chunkSizeBuffer,
-                                               sizeof(chunkSizeBuffer) - 1);
-
-    if (lineLength == 0 && !stream->available())
-      break;
-
-    chunkSizeBuffer[lineLength] = '\0';
-
-    if (lineLength > 0 && chunkSizeBuffer[lineLength - 1] == '\r') {
-      chunkSizeBuffer[lineLength - 1] = '\0';
-      lineLength--;
-    }
-
-    if (lineLength == 0) {
-      continue;
-    }
-
-    long chunkSize = strtol(chunkSizeBuffer, NULL, 16);
-
-    if (chunkSize == 0) {
-      break;
-    }
-
-    if (result->size + chunkSize > bufferCapacity) {
-      bufferCapacity = max(bufferCapacity + (256 * 1024),
-                           (size_t)(result->size + chunkSize + 1024));
-
-      uint8_t *expanded = (uint8_t *)ps_realloc(result->data, bufferCapacity);
-      if (!expanded) {
-        Serial.println("Failed to expand PSRAM buffer");
-        result->httpCode = -1;
-        result->errorDetail = "PSRAM expansion failed for chunked response";
-        return result;
-      }
-      result->data = expanded;
-    }
-
-    size_t bytesRead = 0;
-    while (bytesRead < chunkSize) {
-      size_t read = stream->read(result->data + result->size + bytesRead,
-                                 chunkSize - bytesRead);
-      if (read == 0) {
-        delay(10);
-        if (!stream->connected())
-          break;
-        continue;
-      }
-      bytesRead += read;
-    }
-
-    if (bytesRead != chunkSize) {
-      Serial.printf("Warning: Expected %ld bytes, got %d bytes\n", chunkSize,
-                    bytesRead);
-    }
-    result->size += bytesRead;
-
-    uint8_t trailer[2];
-    stream->readBytes(trailer, 2);
-  }
-
-  if (result->size == 0) {
-    Serial.println("No data received from chunked response");
-    result->httpCode = -1;
-    result->errorDetail = "Chunked response delivered zero bytes";
-    return result;
-  }
-  return result;
-}
-
-std::unique_ptr<DownloadResult>
-HttpDownloader::downloadRegular(WiFiClient *stream, size_t expectedSize) {
-  auto result = std::unique_ptr<DownloadResult>(new DownloadResult());
-
-  size_t bufferCapacity = max((size_t)(400 * 1024), expectedSize + 1024);
-  result->data = (uint8_t *)ps_malloc(bufferCapacity);
-  if (!result->data) {
-    Serial.println("Failed to allocate PSRAM buffer");
-    result->httpCode = -1;
-    result->errorDetail = "PSRAM allocation failed for initial response buffer";
-    return result;
-  }
-
-  result->size = 0;
-  const size_t chunkSize = 1024;
-
-  // Wait for data to be available if connected
-  unsigned long start = millis();
-  while (stream->available() == 0 && stream->connected() &&
-         (millis() - start < 5000)) {
-    delay(10);
-  }
-
-  while (stream->available() > 0 || stream->connected()) {
-    if (result->size + chunkSize > bufferCapacity) {
-      bufferCapacity += 256 * 1024;
-      uint8_t *expanded = (uint8_t *)ps_realloc(result->data, bufferCapacity);
-      if (!expanded) {
-        Serial.println("Failed to expand regular PSRAM buffer");
-        result->httpCode = -1;
-        result->errorDetail = "PSRAM expansion failed while downloading body";
-        return result;
-      }
-      result->data = expanded;
-    }
-
-    size_t bytesRead = stream->read(result->data + result->size, chunkSize);
-    if (bytesRead == 0) {
-      if (!stream->connected())
-        break;
-      delay(10);
-      continue;
-    }
-    result->size += bytesRead;
-  }
   return result;
 }
 
