@@ -3,6 +3,7 @@
 
 #include <JPEGDEC.h>
 #include <LittleFS.h>
+#include <new>
 #include <PNGdec.h>
 #include <WiFi.h>
 
@@ -238,6 +239,16 @@ static std::unique_ptr<ColorImageBitmaps> allocateBitmaps(uint32_t width,
   if (!b->blackBitmap || !b->yellowBitmap || !b->redBitmap || !b->blueBitmap ||
       !b->greenBitmap) {
     Serial.println("Failed to allocate PSRAM for output bitmaps");
+    free(b->blackBitmap);
+    free(b->yellowBitmap);
+    free(b->redBitmap);
+    free(b->blueBitmap);
+    free(b->greenBitmap);
+    b->blackBitmap = nullptr;
+    b->yellowBitmap = nullptr;
+    b->redBitmap = nullptr;
+    b->blueBitmap = nullptr;
+    b->greenBitmap = nullptr;
     return nullptr;
   }
   memset(b->blackBitmap, 0, bitmapSize);
@@ -291,6 +302,17 @@ ditherFloydSteinberg(uint16_t *rgb565Buffer, uint32_t width, uint32_t height) {
   int16_t *errR_next = (int16_t *)calloc(width, sizeof(int16_t));
   int16_t *errG_next = (int16_t *)calloc(width, sizeof(int16_t));
   int16_t *errB_next = (int16_t *)calloc(width, sizeof(int16_t));
+  if (!errR_curr || !errG_curr || !errB_curr || !errR_next || !errG_next ||
+      !errB_next) {
+    Serial.println("Failed to allocate dithering error buffers (Floyd)");
+    free(errR_curr);
+    free(errG_curr);
+    free(errB_curr);
+    free(errR_next);
+    free(errG_next);
+    free(errB_next);
+    return nullptr;
+  }
 
   for (uint32_t y = 0; y < height; y++) {
     for (uint32_t x = 0; x < width; x++) {
@@ -362,6 +384,15 @@ ditherAtkinson(uint16_t *rgb565Buffer, uint32_t width, uint32_t height) {
     eR[i] = (int16_t *)calloc(width, sizeof(int16_t));
     eG[i] = (int16_t *)calloc(width, sizeof(int16_t));
     eB[i] = (int16_t *)calloc(width, sizeof(int16_t));
+    if (!eR[i] || !eG[i] || !eB[i]) {
+      Serial.println("Failed to allocate dithering error buffers (Atkinson)");
+      for (int j = 0; j <= i; j++) {
+        free(eR[j]);
+        free(eG[j]);
+        free(eB[j]);
+      }
+      return nullptr;
+    }
   }
 
   for (uint32_t y = 0; y < height; y++) {
@@ -655,9 +686,16 @@ static int32_t pngSeekCallback(PNGFILE *hFile, int32_t iPosition) {
 
 std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(File &file) {
   Serial.println("Decoding PNG (Streaming from LittleFS)...");
+  if (!file) {
+    Serial.println("Render aborted safely: file open failed before PNG decode");
+    return nullptr;
+  }
 
   // Ensure file is at position 0
-  file.seek(0);
+  if (!file.seek(0)) {
+    Serial.println("Render aborted safely: failed to seek PNG file to start");
+    return nullptr;
+  }
   Serial.printf("LittleFS file size: %d, position: %d\n", file.size(),
                 file.position());
 
@@ -670,7 +708,13 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(File &file) {
 
   // Allocate PNG state on the heap to prevent stack overflow! (PNG state is
   // very large)
-  PNG *png = new PNG();
+  PNG *png = new (std::nothrow) PNG();
+  if (!png) {
+    Serial.println("Render aborted safely: PNG decode object allocation failed");
+    free(pngRgb565Buffer);
+    pngRgb565Buffer = nullptr;
+    return nullptr;
+  }
 
   int rc = png->open((const char *)&file, pngOpenCallback, pngCloseCallback,
                      pngReadCallback, pngSeekCallback, pngDrawCallback);
@@ -698,6 +742,7 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(File &file) {
   if (rc != PNG_SUCCESS) {
     Serial.printf("PNG decode failed (rc=%d, err=%d)\n", rc,
                   png->getLastError());
+    png->close();
     free(pngRgb565Buffer);
     pngRgb565Buffer = nullptr;
     delete png;
@@ -712,6 +757,7 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(File &file) {
   auto bitmaps = ditherImage(pngRgb565Buffer, 1200, 1600);
   free(pngRgb565Buffer);
   pngRgb565Buffer = nullptr;
+  png->close();
   delete png;
   return bitmaps;
 }
@@ -719,6 +765,11 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(File &file) {
 std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(uint8_t *data,
                                                           size_t dataSize) {
   Serial.println("Decoding PNG (RAM)...");
+  if (!data || dataSize < 8) {
+    Serial.println(
+        "Render aborted safely: PNG decode failed due to empty/invalid buffer");
+    return nullptr;
+  }
   pngRgb565Buffer = (uint16_t *)ps_malloc(1200 * 1600 * 2);
   if (!pngRgb565Buffer) {
     Serial.println("Failed to allocate PSRAM for PNG RGB565 buffer");
@@ -726,12 +777,19 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(uint8_t *data,
   }
   memset(pngRgb565Buffer, 0xFFFF, 1200 * 1600 * 2);
 
-  PNG *png = new PNG();
+  PNG *png = new (std::nothrow) PNG();
+  if (!png) {
+    Serial.println("Render aborted safely: PNG decode object allocation failed");
+    free(pngRgb565Buffer);
+    pngRgb565Buffer = nullptr;
+    return nullptr;
+  }
 
   int rc = png->openRAM(data, dataSize, pngDrawCallback);
   if (rc != PNG_SUCCESS) {
     Serial.println("PNG open failed");
     free(pngRgb565Buffer);
+    pngRgb565Buffer = nullptr;
     delete png;
     return nullptr;
   }
@@ -743,6 +801,7 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(uint8_t *data,
   if (rc != PNG_SUCCESS) {
     Serial.printf("PNG decode failed (RAM) (rc=%d, err=%d)\n", rc,
                   png->getLastError());
+    png->close();
     free(pngRgb565Buffer);
     pngRgb565Buffer = nullptr;
     delete png;
@@ -760,6 +819,7 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::decodePNG(uint8_t *data,
   auto bitmaps = ditherImage(pngRgb565Buffer, 1200, 1600);
   free(pngRgb565Buffer);
   pngRgb565Buffer = nullptr;
+  png->close();
   delete png;
   return bitmaps;
 }
@@ -891,10 +951,24 @@ ImageScreen::decodeJPG(const String &filename) {
 }
 
 std::unique_ptr<ColorImageBitmaps> ImageScreen::processImageFile(File &file) {
+  if (!file) {
+    Serial.println("Render aborted safely: file open failed");
+    return nullptr;
+  }
+
   uint8_t header[4];
-  file.seek(0);
-  file.read(header, 4);
-  file.seek(0);
+  if (!file.seek(0)) {
+    Serial.println("Render aborted safely: failed to seek cached file");
+    return nullptr;
+  }
+  if (file.read(header, 4) != 4) {
+    Serial.println("Render aborted safely: failed to read image header");
+    return nullptr;
+  }
+  if (!file.seek(0)) {
+    Serial.println("Render aborted safely: failed to rewind cached file");
+    return nullptr;
+  }
 
   String filename = file.name();
   if (!filename.startsWith("/")) {
@@ -908,15 +982,25 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::processImageFile(File &file) {
   } else if (header[0] == 0x89 && header[1] == 'P' && header[2] == 'N' &&
              header[3] == 'G') {
     File reopenFile = LittleFS.open(filename, FILE_READ);
+    if (!reopenFile) {
+      Serial.println("Render aborted safely: file open failed for PNG decode");
+      return nullptr;
+    }
     auto bitmaps = decodePNG(reopenFile);
     reopenFile.close();
     return bitmaps;
   } else if (header[0] == 'B' && header[1] == 'M') {
     // BMP fallback to PSRAM
     File reopenFile = LittleFS.open(filename, FILE_READ);
+    if (!reopenFile) {
+      Serial.println("Render aborted safely: file open failed for BMP decode");
+      return nullptr;
+    }
     size_t fileSize = reopenFile.size();
     uint8_t *fileBuffer = (uint8_t *)ps_malloc(fileSize);
     if (!fileBuffer) {
+      Serial.println(
+          "Render aborted safely: PSRAM allocation failed for BMP file buffer");
       reopenFile.close();
       return nullptr;
     }
@@ -933,31 +1017,54 @@ std::unique_ptr<ColorImageBitmaps> ImageScreen::processImageFile(File &file) {
 
 std::unique_ptr<ColorImageBitmaps>
 ImageScreen::processImageData(uint8_t *data, size_t dataSize) {
-  if (dataSize < 4)
+  if (!data || dataSize < 4) {
+    Serial.printf(
+        "Render aborted safely: invalid image buffer (ptr=%p, size=%u)\n", data,
+        (unsigned int)dataSize);
     return nullptr;
+  }
+
+  Serial.printf("Image download succeeded: received %u bytes\n",
+                (unsigned int)dataSize);
 
   if (dataSize > 1.5 * 1024 * 1024) { // over 1.5MB
     Serial.println("Image too large for PSRAM decoding. Temporarily caching to "
                    "LittleFS...");
 
     // Ensure LittleFS is mounted before attempting to write cache
-    LittleFS.begin(true);
+    if (!LittleFS.begin(true)) {
+      Serial.println("Render aborted safely: failed to mount LittleFS cache");
+      return nullptr;
+    }
 
     fs::File tempFile = LittleFS.open("/large_temp.img", FILE_WRITE);
     if (tempFile) {
-      tempFile.write(data, dataSize);
+      size_t written = tempFile.write(data, dataSize);
       tempFile.close();
+      if (written != dataSize) {
+        Serial.printf(
+            "Render aborted safely: failed writing cache file (%u/%u bytes)\n",
+            (unsigned int)written, (unsigned int)dataSize);
+        LittleFS.remove("/large_temp.img");
+        return nullptr;
+      }
 
       // Memory is automatically managed by the DownloadResult destructor
 
       tempFile = LittleFS.open("/large_temp.img", FILE_READ);
+      if (!tempFile) {
+        Serial.println("Render aborted safely: file open failed for cached image");
+        LittleFS.remove("/large_temp.img");
+        return nullptr;
+      }
       auto bitmaps = processImageFile(tempFile);
       tempFile.close();
       LittleFS.remove("/large_temp.img");
       return bitmaps;
     }
-    Serial.println(
-        "Failed to cache to LittleFS, attempting direct RAM decode anyway...");
+    Serial.println("File open failed: unable to create LittleFS cache file");
+    Serial.println("Render aborted safely: image too large for direct decode");
+    return nullptr;
   }
 
   // Manual format detection
@@ -971,6 +1078,7 @@ ImageScreen::processImageData(uint8_t *data, size_t dataSize) {
   }
 
   Serial.println("Unknown image format");
+  Serial.println("Render aborted safely");
   return nullptr;
 }
 
@@ -1025,6 +1133,10 @@ void ImageScreen::render() {
 
   if (downloadResult->httpCode == HTTP_CODE_OK) {
     bitmaps = processImageData(downloadResult->data, downloadResult->size);
+    if (!bitmaps) {
+      Serial.println(
+          "Decode failed or render aborted safely after successful download");
+    }
   } else {
     printf("Failed to download image (HTTP %d)\r\n", downloadResult->httpCode);
   }
