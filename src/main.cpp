@@ -29,8 +29,8 @@ void initializeDefaultConfig() {
   }
 }
 
-void refreshDisplay() {
-  ImageScreen imageScreen(display, *appConfig, configStorage);
+void refreshDisplay(bool forceFreshFetch = false) {
+  ImageScreen imageScreen(display, *appConfig, configStorage, forceFreshFetch);
   imageScreen.render();
 }
 
@@ -73,7 +73,7 @@ void runWebServer(bool useAP) {
     if (server.isRefreshRequested()) {
       server.clearRefreshRequest();
       printf("Manual refresh requested from web UI.\n");
-      refreshDisplay();
+      refreshDisplay(true);
     }
 
     if (alwaysAwake && WiFi.status() == WL_CONNECTED &&

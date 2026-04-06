@@ -17,7 +17,14 @@
 #include <FS.h>
 #include <LittleFS.h>
 
-RTC_DATA_ATTR static char storedImageETag[128] = "";
+// RTC memory survives deep sleep resets. We keep one URL-scoped ETag entry
+// here so conditional requests remain correct even if the source URL changes.
+struct ImageEtagCacheEntry {
+  char url[256];
+  char etag[128];
+};
+
+RTC_DATA_ATTR static ImageEtagCacheEntry storedImageEtagCache = {"", ""};
 
 struct ColorImageBitmaps {
   uint8_t *blackBitmap;
@@ -58,6 +65,7 @@ private:
 
   const uint8_t *smallFont;
   String ditheringServiceUrl;
+  bool forceFreshFetch;
 
   std::unique_ptr<DownloadResult> download();
   std::unique_ptr<ColorImageBitmaps> processImageData(uint8_t *data,
@@ -66,8 +74,8 @@ private:
   void renderBitmaps(const ColorImageBitmaps &bitmaps);
   void displayBatteryStatus();
   void displayWifiInfo();
-  void storeImageETag(const String &etag);
-  String getStoredImageETag();
+  void storeImageETag(const String &url, const String &etag);
+  String getStoredImageETag(const String &url);
   std::unique_ptr<ColorImageBitmaps>
   ditherImage(uint16_t *rgb565Buffer, uint32_t width, uint32_t height);
 
@@ -79,7 +87,8 @@ private:
 
 public:
   ImageScreen(DisplayType &display, ApplicationConfig &config,
-              ApplicationConfigStorage &configStorage);
+              ApplicationConfigStorage &configStorage,
+              bool forceFreshFetch = false);
   void render() override;
   int nextRefreshInSeconds() override;
 };

@@ -10,27 +10,48 @@
 #include <FS.h>
 
 ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config,
-                         ApplicationConfigStorage &configStorage)
+                         ApplicationConfigStorage &configStorage,
+                         bool forceFreshFetch)
     : display(display), config(config), configStorage(configStorage),
-      smallFont(u8g2_font_helvR12_tr) {
+      smallFont(u8g2_font_helvR12_tr), forceFreshFetch(forceFreshFetch) {
   gfx.begin(display);
 }
 
-void ImageScreen::storeImageETag(const String &etag) {
-  strncpy(storedImageETag, etag.c_str(), sizeof(storedImageETag) - 1);
-  storedImageETag[sizeof(storedImageETag) - 1] = '\0';
-  Serial.println("Stored ETag in RTC memory: " + etag);
+void ImageScreen::storeImageETag(const String &url, const String &etag) {
+  strncpy(storedImageEtagCache.url, url.c_str(),
+          sizeof(storedImageEtagCache.url) - 1);
+  storedImageEtagCache.url[sizeof(storedImageEtagCache.url) - 1] = '\0';
+  strncpy(storedImageEtagCache.etag, etag.c_str(),
+          sizeof(storedImageEtagCache.etag) - 1);
+  storedImageEtagCache.etag[sizeof(storedImageEtagCache.etag) - 1] = '\0';
+
+  Serial.println("Stored ETag in RTC memory for URL '" + url + "': " + etag);
 }
 
-String ImageScreen::getStoredImageETag() { return String(storedImageETag); }
+String ImageScreen::getStoredImageETag(const String &url) {
+  if (url != String(storedImageEtagCache.url)) {
+    return "";
+  }
+
+  return String(storedImageEtagCache.etag);
+}
 
 std::unique_ptr<DownloadResult> ImageScreen::download() {
-  String storedETag = getStoredImageETag();
-  Serial.println("Using stored ETag for request: '" + storedETag + "'");
-  auto result = downloader.download(String(DEFAULT_IMAGE_URL), storedETag);
+  const String imageUrl = String(DEFAULT_IMAGE_URL);
+  String storedETag = "";
+
+  if (!forceFreshFetch) {
+    storedETag = getStoredImageETag(imageUrl);
+    Serial.println("Using stored ETag for request: '" + storedETag + "'");
+  } else {
+    Serial.println(
+        "Manual refresh: forcing fresh fetch (skipping If-None-Match header)");
+  }
+
+  auto result = downloader.download(imageUrl, storedETag);
 
   if (result->etag.length() > 0) {
-    storeImageETag(result->etag);
+    storeImageETag(imageUrl, result->etag);
   }
 
   return result;
