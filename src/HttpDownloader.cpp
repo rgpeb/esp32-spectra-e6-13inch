@@ -2,10 +2,27 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <LittleFS.h>
+#include <cstring>
 
 namespace {
 constexpr const char *kRemoteImageCachePath = "/remote_image_download.img";
 constexpr size_t kDownloadChunkSize = 2048;
+
+String normalizeLittleFSPath(const char *path) {
+  if (path == nullptr) {
+    return String("/");
+  }
+  String normalized(path);
+  if (normalized.startsWith("/littlefs/")) {
+    normalized = normalized.substring(strlen("/littlefs"));
+  } else if (normalized == "/littlefs") {
+    normalized = "/";
+  }
+  if (!normalized.startsWith("/")) {
+    normalized = "/" + normalized;
+  }
+  return normalized;
+}
 }
 
 HttpDownloader::HttpDownloader() {}
@@ -83,25 +100,33 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
   }
 
   if (!LittleFS.begin(true)) {
-    Serial.println("Render aborted safely: failed to mount LittleFS for download cache");
+    Serial.println(
+        "LittleFS mount failed: failed to prepare remote download cache");
     result->httpCode = -1;
     result->errorDetail = "LittleFS mount failed while preparing download cache";
     http.end();
     return result;
   }
+  Serial.printf("LittleFS mount success: total=%u used=%u\n",
+                (unsigned int)LittleFS.totalBytes(),
+                (unsigned int)LittleFS.usedBytes());
 
-  if (LittleFS.exists(kRemoteImageCachePath)) {
-    LittleFS.remove(kRemoteImageCachePath);
+  const String cachePath = normalizeLittleFSPath(kRemoteImageCachePath);
+  Serial.println("Temp file open path: " + cachePath);
+
+  if (LittleFS.exists(cachePath.c_str())) {
+    LittleFS.remove(cachePath.c_str());
   }
 
-  fs::File outputFile = LittleFS.open(kRemoteImageCachePath, FILE_WRITE);
+  fs::File outputFile = LittleFS.open(cachePath.c_str(), "w");
   if (!outputFile) {
-    Serial.println("Render aborted safely: failed to create LittleFS download cache file");
+    Serial.println("Temp file open failed: unable to create download cache");
     result->httpCode = -1;
     result->errorDetail = "Failed to open LittleFS cache file for HTTP body";
     http.end();
     return result;
   }
+  Serial.println("Temp file open success");
 
   WiFiClient *stream = http.getStreamPtr();
   uint8_t ioBuffer[kDownloadChunkSize];
@@ -128,16 +153,17 @@ HttpDownloader::download(const String &url, const String &cachedETag) {
       break;
     }
     totalWritten += bytesWritten;
+    Serial.printf("Bytes written so far: %u\n", (unsigned int)totalWritten);
   }
   outputFile.flush();
   outputFile.close();
 
   http.end();
   if (result->httpCode == -1) {
-    LittleFS.remove(kRemoteImageCachePath);
+    LittleFS.remove(cachePath.c_str());
   } else {
     result->size = totalWritten;
-    result->filePath = kRemoteImageCachePath;
+    result->filePath = cachePath;
     Serial.printf("HTTP body streamed to LittleFS: %u bytes\n",
                   (unsigned int)totalWritten);
     Serial.printf("File saved successfully: %s\n", result->filePath.c_str());
