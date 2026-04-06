@@ -1177,17 +1177,18 @@ void ImageScreen::render() {
       Serial.println("Downloaded content type: " + downloadResult->contentType);
     }
     if (downloadResult->filePath.length() > 0) {
-      Serial.println("Decode start: cached file " + downloadResult->filePath);
+      Serial.println("Decode start from " + downloadResult->filePath);
       File imageFile = LittleFS.open(downloadResult->filePath, FILE_READ);
       if (!imageFile) {
-        Serial.println("Decode failed: cached file open failed");
+        Serial.println("Decode failure: cached file open failed");
         lastDecodeError = "Failed to open cached image file";
       } else {
         bitmaps = processImageFile(imageFile);
         if (bitmaps) {
-          Serial.println("Decode success: image decoded from cached file");
+          Serial.println("Decode success: image decoded from " +
+                         downloadResult->filePath);
         } else {
-          Serial.println("Decode failed: cached file decode failed");
+          Serial.println("Decode failure: cached file decode failed");
         }
       }
       LittleFS.remove(downloadResult->filePath);
@@ -1205,10 +1206,12 @@ void ImageScreen::render() {
   }
 
   if (!bitmaps) {
+    Serial.println("Render failure: image bitmaps unavailable");
     printf("No remote image available\r\n");
     return;
   }
 
+  Serial.println("Render start");
   renderBitmaps(*bitmaps);
   // Stats removed — clean image only
   // displayBatteryStatus();
@@ -1216,6 +1219,7 @@ void ImageScreen::render() {
 
   display.display();
   display.hibernate();
+  Serial.println("Render success");
 }
 
 void ImageScreen::displayBatteryStatus() {
