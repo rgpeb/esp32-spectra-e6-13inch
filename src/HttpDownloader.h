@@ -10,8 +10,12 @@ struct DownloadResult {
   size_t size;
   int httpCode;
   String etag;
+  String contentType;
+  String errorDetail;
 
-  DownloadResult() : data(nullptr), size(0), httpCode(0), etag("") {}
+  DownloadResult()
+      : data(nullptr), size(0), httpCode(0), etag(""), contentType(""),
+        errorDetail("") {}
 
   ~DownloadResult() {
     if (data != nullptr) {
@@ -29,6 +33,8 @@ class HttpDownloader {
   String urlEncode(const String& str);
 
  private:
-  std::unique_ptr<DownloadResult> downloadChunked(WiFiClient* stream);
-  std::unique_ptr<DownloadResult> downloadRegular(WiFiClient* stream);
+  std::unique_ptr<DownloadResult> downloadChunked(WiFiClient* stream,
+                                                  size_t expectedSize);
+  std::unique_ptr<DownloadResult> downloadRegular(WiFiClient* stream,
+                                                  size_t expectedSize);
 };
