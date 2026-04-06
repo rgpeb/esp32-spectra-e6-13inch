@@ -6,7 +6,6 @@
 #include <PNGdec.h>
 #include <WiFi.h>
 
-#include "FolderImageSource.h"
 #include "battery.h"
 #include <FS.h>
 
@@ -988,136 +987,29 @@ void ImageScreen::renderBitmaps(const ColorImageBitmaps &bitmaps) {
                      bitmaps.height, GxEPD_GREEN);
 }
 
-std::unique_ptr<ColorImageBitmaps> ImageScreen::loadFromLittleFS() {
-  const char *extensions[] = {".bmp", ".jpg", ".jpeg", ".png", ""};
-  String baseName = "/local_image";
-  String filename = "";
-
-  for (const char *ext : extensions) {
-    if (LittleFS.exists(baseName + ext)) {
-      filename = baseName + ext;
-      break;
-    }
-  }
-
-  if (filename == "") {
-    printf("No local image found on LittleFS.\r\n");
-    return nullptr;
-  }
-
-  File file = LittleFS.open(filename, FILE_READ);
-  if (!file) {
-    printf("Failed to open %s for reading.\r\n", filename.c_str());
-    return nullptr;
-  }
-
-  printf("Found %s (Size: %d bytes). Streaming directly to "
-         "processImageFile...\r\n",
-         filename.c_str(), file.size());
-
-  auto bitmaps = processImageFile(file);
-  file.close();
-
-  return bitmaps;
-}
-
-std::unique_ptr<ColorImageBitmaps> ImageScreen::loadFromFolder() {
-  // Priority: pinned image overrides cycling
-  if (config.hasPinnedImage()) {
-    Serial.printf("Folder: loading pinned image: %s\n", config.pinnedImageUrl);
-    FolderImageSource folderSource;
-    auto result = folderSource.fetchImageByUrl(String(config.pinnedImageUrl));
-    if (result && result->httpCode == HTTP_CODE_OK && result->data) {
-      Serial.printf("Folder: processing pinned image (%d bytes)\n",
-                    result->size);
-      // Cache data locally then free download buffer to reclaim PSRAM
-      // before the RGB565 decode buffer (3.8MB) is allocated
-      size_t dataSize = result->size;
-      uint8_t *data = result->data;
-      result->data = nullptr; // Prevent DownloadResult destructor double-free
-      auto bitmaps = processImageData(data, dataSize);
-      free(data); // Safe: we own this pointer now
-      if (bitmaps)
-        return bitmaps;
-      Serial.println("Folder: pinned image processing failed (bitmaps null)");
-    } else {
-      Serial.printf("Folder: pinned image fetch failed (Code: %d, Data: %s)\n",
-                    result ? result->httpCode : -1,
-                    (result && result->data) ? "exists" : "null");
-    }
-    Serial.println("Folder: pinned image failed, falling back to cycling");
-  }
-
-  uint16_t imageIndex = configStorage.loadImageIndex();
-  uint16_t totalImages = 0;
-
-  FolderImageSource folderSource;
-  auto result = folderSource.fetchImage(String(config.folderUrl), imageIndex,
-                                        totalImages);
-
-  if (!result || result->httpCode != HTTP_CODE_OK || !result->data) {
-    printf("Folder: failed to fetch image\r\n");
-    return nullptr;
-  }
-
-  printf("Folder: processing image (%d bytes)\r\n", result->size);
-  // Free download buffer before decode to reclaim PSRAM
-  size_t dataSize = result->size;
-  uint8_t *data = result->data;
-  result->data = nullptr; // Prevent DownloadResult destructor double-free
-  auto bitmaps = processImageData(data, dataSize);
-  free(data);
-  return bitmaps;
-}
-
 void ImageScreen::render() {
   display.init(115200);
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
   display.setFullWindow();
   display.fillScreen(GxEPD_WHITE);
 
-  LittleFS.begin(true);
-
   std::unique_ptr<ColorImageBitmaps> bitmaps = nullptr;
 
-  // Priority 0: Pinned image (user explicitly chose this image)
-  if (config.hasPinnedImage() && config.hasFolderUrl()) {
-    Serial.println("Loading pinned image (highest priority)...");
-    bitmaps = loadFromFolder(); // loadFromFolder checks pinned first
+  auto downloadResult = download();
+
+  if (downloadResult->httpCode == HTTP_CODE_NOT_MODIFIED) {
+    Serial.println("Image not modified (304), keeping current display");
+    return;
   }
 
-  // Priority 1: Local uploaded image (from web upload or SD card copy)
-  if (!bitmaps) {
-    bitmaps = loadFromLittleFS();
-  }
-
-  // Priority 2: Folder URL — cycle through images in order
-  if (!bitmaps && config.hasFolderUrl()) {
-    bitmaps = loadFromFolder();
-    if (!bitmaps) {
-      printf("Folder source failed, falling back to single image URL\r\n");
-    }
-  }
-
-  // Priority 3: Single image URL
-  if (!bitmaps) {
-    auto downloadResult = download();
-
-    if (downloadResult->httpCode == HTTP_CODE_NOT_MODIFIED) {
-      Serial.println("Image not modified (304), using cached version");
-      return;
-    }
-
-    if (downloadResult->httpCode == HTTP_CODE_OK) {
-      bitmaps = processImageData(downloadResult->data, downloadResult->size);
-    } else {
-      printf("Failed to download image (HTTP %d)\r\n",
-             downloadResult->httpCode);
-    }
+  if (downloadResult->httpCode == HTTP_CODE_OK) {
+    bitmaps = processImageData(downloadResult->data, downloadResult->size);
+  } else {
+    printf("Failed to download image (HTTP %d)\r\n", downloadResult->httpCode);
   }
 
   if (!bitmaps) {
-    printf("No image available from any source\r\n");
+    printf("No remote image available\r\n");
     return;
   }
 

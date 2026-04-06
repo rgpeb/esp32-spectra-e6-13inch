@@ -9,7 +9,6 @@
 #include <memory>
 #include <stdint.h>
 
-
 #include "ApplicationConfig.h"
 #include "ApplicationConfigStorage.h"
 #include "DisplayAdapter.h"
@@ -69,8 +68,6 @@ private:
   void displayWifiInfo();
   void storeImageETag(const String &etag);
   String getStoredImageETag();
-  std::unique_ptr<ColorImageBitmaps> loadFromLittleFS();
-  std::unique_ptr<ColorImageBitmaps> loadFromFolder();
   std::unique_ptr<ColorImageBitmaps>
   ditherImage(uint16_t *rgb565Buffer, uint32_t width, uint32_t height);
 
