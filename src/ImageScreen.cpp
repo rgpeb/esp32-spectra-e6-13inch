@@ -17,6 +17,11 @@ void copyToFixedBuffer(char *dst, size_t dstSize, const String &src) {
   strncpy(dst, src.c_str(), dstSize - 1);
   dst[dstSize - 1] = '\0';
 }
+
+void logBinaryPathStage(const char *functionName, const char *stage,
+                        const char *path) {
+  Serial.printf("[%s] %s path: %s\n", functionName, stage, path);
+}
 } // namespace
 
 ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config,
@@ -75,23 +80,31 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
     return status;
   }
 
-  JsonVariant versionVar = doc["version"];
+  bool hasParsedVersionInt = false;
+  int parsedVersionInt = -1;
+  JsonVariantConst versionVar = doc["version"];
   if (!versionVar.isNull()) {
-    if (versionVar.is<const char *>()) {
-      status.version = String(versionVar.as<const char *>());
-    } else if (versionVar.is<long long>()) {
-      status.version = String(versionVar.as<long long>());
-    } else if (versionVar.is<double>()) {
-      status.version = String(versionVar.as<double>(), 0);
+    if (versionVar.is<int>()) {
+      parsedVersionInt = versionVar.as<int>();
+      hasParsedVersionInt = true;
+    } else if (versionVar.is<long>()) {
+      parsedVersionInt = static_cast<int>(versionVar.as<long>());
+      hasParsedVersionInt = true;
+    } else if (versionVar.is<const char *>()) {
+      parsedVersionInt = atoi(versionVar.as<const char *>());
+      hasParsedVersionInt = true;
     }
   }
+  if (hasParsedVersionInt) {
+    status.version = String(parsedVersionInt);
+  }
 
-  JsonVariant etagVar = doc["etag"];
+  JsonVariantConst etagVar = doc["etag"];
   if (etagVar.is<const char *>()) {
     status.etag = String(etagVar.as<const char *>());
   }
 
-  JsonVariant assetUrlVar = doc["assetUrl"];
+  JsonVariantConst assetUrlVar = doc["assetUrl"];
   if (assetUrlVar.is<const char *>()) {
     status.assetUrl = String(assetUrlVar.as<const char *>());
   }
@@ -100,7 +113,8 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
     status.etag = statusHeaderEtag;
   }
 
-  Serial.println("Status parsed version: '" + status.version + "'");
+  Serial.printf("Status parsed version int: %d\n", parsedVersionInt);
+  Serial.println("Status parsed version string: '" + status.version + "'");
   Serial.println("Status parsed etag: '" + status.etag + "'");
   Serial.println("Status parsed assetUrl: '" + status.assetUrl + "'");
   return status;
@@ -139,6 +153,7 @@ bool ImageScreen::isUpdateNeeded(const StatusMetadata &status) const {
 bool ImageScreen::downloadBinaryToLittleFS(const String &url,
                                            const String &ifNoneMatch) {
   const String binaryUrl = url.length() > 0 ? url : getBinaryUrl();
+  logBinaryPathStage(__func__, "download target", kBinaryCachePath);
   Serial.println("Binary download URL: " + binaryUrl);
   Serial.println(String("Binary target path: ") + kBinaryCachePath);
 
@@ -178,10 +193,12 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
     return false;
   }
 
-  if (LittleFS.exists(kBinaryCachePath)) {
-    LittleFS.remove(kBinaryCachePath);
+  logBinaryPathStage(__func__, "pre-open remove", kBinaryCachePath);
+  if (!LittleFS.remove(kBinaryCachePath)) {
+    Serial.println("[downloadBinaryToLittleFS] pre-open remove: file did not exist");
   }
 
+  logBinaryPathStage(__func__, "open write", kBinaryCachePath);
   File out = LittleFS.open(kBinaryCachePath, "w");
   if (!out) {
     Serial.println("Binary download failed: file open failed");
@@ -212,6 +229,7 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
       Serial.printf("Binary download failed: short write (%u/%u)\n",
                     (unsigned int)bytesWritten, (unsigned int)bytesRead);
       out.close();
+      logBinaryPathStage(__func__, "cleanup on error", kBinaryCachePath);
       http.end();
       LittleFS.remove(kBinaryCachePath);
       return false;
@@ -223,16 +241,16 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   Serial.printf("Binary file write complete: %u bytes\n",
                 (unsigned int)totalWritten);
   out.flush();
+  Serial.println("[downloadBinaryToLittleFS] file flush complete");
   out.close();
-  const bool closeResult = !out;
-  Serial.printf("Binary file close complete: %s\n",
-                closeResult ? "success" : "failed");
+  Serial.println("[downloadBinaryToLittleFS] file close complete");
   http.end();
 
   Serial.printf("Binary download completed: %u bytes\n", (unsigned int)totalWritten);
   if (totalWritten != kNativeBinarySize) {
     Serial.printf("Binary download failed: expected %u bytes\n",
                   (unsigned int)kNativeBinarySize);
+    logBinaryPathStage(__func__, "cleanup size mismatch", kBinaryCachePath);
     LittleFS.remove(kBinaryCachePath);
     return false;
   }
@@ -241,6 +259,7 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
 }
 
 bool ImageScreen::renderBinaryFromLittleFS() {
+  logBinaryPathStage(__func__, "render open read", kBinaryCachePath);
   Serial.println(String("Render start from ") + kBinaryCachePath);
   File in = LittleFS.open(kBinaryCachePath, FILE_READ);
   if (!in) {
@@ -252,6 +271,7 @@ bool ImageScreen::renderBinaryFromLittleFS() {
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
   display.setFullWindow();
 
+  logBinaryPathStage(__func__, "decode framebuffer read", kBinaryCachePath);
   const bool loaded = display.loadNativeFrameBuffer(in, kNativeBinarySize);
   in.close();
 
@@ -262,7 +282,7 @@ bool ImageScreen::renderBinaryFromLittleFS() {
 
   display.display();
   display.hibernate();
-  Serial.println("Render success");
+  Serial.println("[renderBinaryFromLittleFS] render success");
   return true;
 }
 
@@ -326,6 +346,7 @@ void ImageScreen::render() {
   } else {
     Serial.println("Render failure");
   }
+  logBinaryPathStage(__func__, "final cleanup", kBinaryCachePath);
   LittleFS.remove(kBinaryCachePath);
   LittleFS.end();
 }
