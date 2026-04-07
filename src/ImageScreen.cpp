@@ -1,5 +1,6 @@
 #include "ImageScreen.h"
 
+#include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -34,32 +35,19 @@ String ImageScreen::getBinaryUrl() const {
          "/current.bin";
 }
 
-bool ImageScreen::parseJsonStringField(const String &json, const char *field,
-                                       String &outValue) const {
-  const String key = String("\"") + field + "\"";
-  const int keyPos = json.indexOf(key);
-  if (keyPos < 0) {
-    return false;
+String ImageScreen::normalizeLittleFSPath(const String &path) const {
+  String normalized = path;
+  if (normalized.startsWith("/littlefs/")) {
+    normalized = normalized.substring(strlen("/littlefs"));
+  } else if (normalized == "/littlefs") {
+    normalized = "/";
   }
 
-  const int colonPos = json.indexOf(':', keyPos + key.length());
-  if (colonPos < 0) {
-    return false;
+  if (!normalized.startsWith("/")) {
+    normalized = "/" + normalized;
   }
 
-  int valueStart = json.indexOf('"', colonPos + 1);
-  if (valueStart < 0) {
-    return false;
-  }
-  valueStart += 1;
-
-  const int valueEnd = json.indexOf('"', valueStart);
-  if (valueEnd < 0) {
-    return false;
-  }
-
-  outValue = json.substring(valueStart, valueEnd);
-  return true;
+  return normalized;
 }
 
 ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
@@ -93,20 +81,32 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
   const String statusHeaderEtag = http.header("ETag");
   http.end();
 
-  String parsedVersion;
-  String parsedBodyEtag;
-  parseJsonStringField(body, "version", parsedVersion);
-  parseJsonStringField(body, "etag", parsedBodyEtag);
+  Serial.println("Status response body: " + body);
 
-  status.version = parsedVersion;
-  if (parsedBodyEtag.length() > 0) {
-    status.etag = parsedBodyEtag;
-  } else {
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    Serial.printf("Status parse failed: %s\n", err.c_str());
+    return status;
+  }
+
+  if (doc["version"].is<const char *>()) {
+    status.version = String(doc["version"].as<const char *>());
+  }
+  if (doc["etag"].is<const char *>()) {
+    status.etag = String(doc["etag"].as<const char *>());
+  }
+  if (doc["assetUrl"].is<const char *>()) {
+    status.assetUrl = String(doc["assetUrl"].as<const char *>());
+  }
+
+  if (status.etag.length() == 0) {
     status.etag = statusHeaderEtag;
   }
 
   Serial.println("Status parsed version: '" + status.version + "'");
   Serial.println("Status parsed etag: '" + status.etag + "'");
+  Serial.println("Status parsed assetUrl: '" + status.assetUrl + "'");
   return status;
 }
 
@@ -140,10 +140,20 @@ bool ImageScreen::isUpdateNeeded(const StatusMetadata &status) const {
   return changed;
 }
 
-bool ImageScreen::downloadBinaryToLittleFS(const String &path,
+bool ImageScreen::downloadBinaryToLittleFS(const String &url,
+                                           const String &path,
                                            const String &ifNoneMatch) {
-  const String binaryUrl = getBinaryUrl();
-  Serial.println("Binary download: " + binaryUrl);
+  const String binaryUrl = url.length() > 0 ? url : getBinaryUrl();
+  const String fsPath = normalizeLittleFSPath(path);
+  Serial.println("Binary download URL: " + binaryUrl);
+  Serial.println("Binary temp path: " + fsPath);
+
+  const bool fsMounted = LittleFS.begin(true);
+  Serial.printf("LittleFS mount for binary download: %s\n",
+                fsMounted ? "success" : "failed");
+  if (!fsMounted) {
+    return false;
+  }
 
   std::unique_ptr<WiFiClient> client;
   if (binaryUrl.startsWith("https://")) {
@@ -174,16 +184,17 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &path,
     return false;
   }
 
-  if (LittleFS.exists(path)) {
-    LittleFS.remove(path);
+  if (LittleFS.exists(fsPath)) {
+    LittleFS.remove(fsPath);
   }
 
-  File out = LittleFS.open(path, FILE_WRITE);
+  File out = LittleFS.open(fsPath, "w");
   if (!out) {
-    Serial.println("Binary download failed: cannot open cache file");
+    Serial.println("Binary download failed: file open failed");
     http.end();
     return false;
   }
+  Serial.println("Binary download: file open success");
 
   WiFiClient *stream = http.getStreamPtr();
   uint8_t buffer[kDownloadChunkSize];
@@ -208,22 +219,26 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &path,
                     (unsigned int)bytesWritten, (unsigned int)bytesRead);
       out.close();
       http.end();
-      LittleFS.remove(path);
+      LittleFS.remove(fsPath);
       return false;
     }
 
     totalWritten += bytesWritten;
   }
 
+  Serial.printf("Binary download bytes written: %u\n", (unsigned int)totalWritten);
   out.flush();
   out.close();
+  const bool closeResult = !out;
+  Serial.printf("Binary download file close: %s\n",
+                closeResult ? "success" : "failed");
   http.end();
 
   Serial.printf("Binary download completed: %u bytes\n", (unsigned int)totalWritten);
   if (totalWritten != kNativeBinarySize) {
     Serial.printf("Binary download failed: expected %u bytes\n",
                   (unsigned int)kNativeBinarySize);
-    LittleFS.remove(path);
+    LittleFS.remove(fsPath);
     return false;
   }
 
@@ -274,7 +289,10 @@ void ImageScreen::render() {
     return;
   }
 
-  if (!LittleFS.begin(true)) {
+  const bool fsMounted = LittleFS.begin(true);
+  Serial.printf("LittleFS mount in render(): %s\n",
+                fsMounted ? "success" : "failed");
+  if (!fsMounted) {
     Serial.println("Render skipped: LittleFS mount failed");
     return;
   }
@@ -297,8 +315,11 @@ void ImageScreen::render() {
     return;
   }
 
+  const String binaryUrl =
+      status.assetUrl.length() > 0 ? status.assetUrl : getBinaryUrl();
   Serial.println("Update needed: yes (downloading current.bin)");
-  if (!downloadBinaryToLittleFS(kBinaryCachePath, String(config.lastStatusEtag))) {
+  if (!downloadBinaryToLittleFS(binaryUrl, kBinaryCachePath,
+                                String(config.lastStatusEtag))) {
     Serial.println("Render skipped: binary download failed");
     LittleFS.end();
     return;

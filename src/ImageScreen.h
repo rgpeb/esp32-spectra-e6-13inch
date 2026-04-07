@@ -20,16 +20,16 @@ private:
   struct StatusMetadata {
     String version;
     String etag;
+    String assetUrl;
     int httpCode = -1;
   };
 
   String getStatusUrl() const;
   String getBinaryUrl() const;
-  bool parseJsonStringField(const String &json, const char *field,
-                            String &outValue) const;
+  String normalizeLittleFSPath(const String &path) const;
   StatusMetadata fetchStatusMetadata();
   bool isUpdateNeeded(const StatusMetadata &status) const;
-  bool downloadBinaryToLittleFS(const String &path,
+  bool downloadBinaryToLittleFS(const String &url, const String &path,
                                 const String &ifNoneMatch = "");
   bool renderBinaryFromLittleFS(const String &path);
   void persistStatusMetadata(const StatusMetadata &status);
