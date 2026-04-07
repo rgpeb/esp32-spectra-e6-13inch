@@ -9,6 +9,7 @@ namespace {
 constexpr const char *kBinaryCachePath = "/current.bin";
 constexpr size_t kNativeBinarySize = (EPD_NATIVE_WIDTH * EPD_NATIVE_HEIGHT) / 2;
 constexpr size_t kDownloadChunkSize = 2048;
+constexpr unsigned long kBinaryStreamStallTimeoutMs = 15000;
 
 void copyToFixedBuffer(char *dst, size_t dstSize, const String &src) {
   if (dstSize == 0) {
@@ -210,14 +211,34 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   WiFiClient *stream = http.getStreamPtr();
   uint8_t buffer[kDownloadChunkSize];
   size_t totalWritten = 0;
+  unsigned long lastProgressMs = millis();
+  const unsigned long downloadLoopStartMs = lastProgressMs;
+  bool abortedForStall = false;
+  String loopExitReason = "loop condition false";
 
   while (http.connected() || stream->available()) {
     const size_t available = stream->available();
     const size_t toRead = available > 0 ? min(available, kDownloadChunkSize)
                                         : kDownloadChunkSize;
+    const bool connectedBeforeRead = http.connected();
     const size_t bytesRead = stream->readBytes(buffer, toRead);
+    Serial.printf(
+        "Binary download loop: available=%u bytesRead=%u totalWritten=%u connected=%s\n",
+        (unsigned int)available, (unsigned int)bytesRead,
+        (unsigned int)totalWritten, connectedBeforeRead ? "true" : "false");
     if (bytesRead == 0) {
       if (!http.connected()) {
+        loopExitReason = "stream produced 0 bytes and HTTP disconnected";
+        break;
+      }
+      const unsigned long nowMs = millis();
+      const unsigned long stalledMs = nowMs - lastProgressMs;
+      if (stalledMs >= kBinaryStreamStallTimeoutMs) {
+        Serial.printf(
+            "Binary download aborted: no bytes read for %lu ms (timeout %lu ms)\n",
+            stalledMs, kBinaryStreamStallTimeoutMs);
+        loopExitReason = "stalled: stream stopped producing bytes";
+        abortedForStall = true;
         break;
       }
       delay(5);
@@ -236,6 +257,24 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
     }
 
     totalWritten += bytesWritten;
+    lastProgressMs = millis();
+  }
+
+  if (loopExitReason == "loop condition false") {
+    loopExitReason = "HTTP disconnected and stream had no available bytes";
+  }
+  Serial.printf(
+      "Binary download loop exit: reason='%s', totalWritten=%u, elapsedMs=%lu\n",
+      loopExitReason.c_str(), (unsigned int)totalWritten,
+      millis() - downloadLoopStartMs);
+
+  if (abortedForStall) {
+    out.close();
+    Serial.println("[downloadBinaryToLittleFS] file close complete");
+    http.end();
+    logBinaryPathStage(__func__, "cleanup stall timeout", kBinaryCachePath);
+    LittleFS.remove(kBinaryCachePath);
+    return false;
   }
 
   Serial.printf("Binary file write complete: %u bytes\n",
