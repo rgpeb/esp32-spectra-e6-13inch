@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <LittleFS.h>
-#include <cstring>
 
 namespace {
 constexpr const char *kRemoteImageCachePath = "/remote_image_download.img";
@@ -13,11 +12,6 @@ String normalizeLittleFSPath(const char *path) {
     return String("/");
   }
   String normalized(path);
-  if (normalized.startsWith("/littlefs/")) {
-    normalized = normalized.substring(strlen("/littlefs"));
-  } else if (normalized == "/littlefs") {
-    normalized = "/";
-  }
   if (!normalized.startsWith("/")) {
     normalized = "/" + normalized;
   }
