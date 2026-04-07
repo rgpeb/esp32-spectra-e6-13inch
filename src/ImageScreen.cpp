@@ -17,6 +17,11 @@ void copyToFixedBuffer(char *dst, size_t dstSize, const String &src) {
   strncpy(dst, src.c_str(), dstSize - 1);
   dst[dstSize - 1] = '\0';
 }
+
+void logBinaryPathStage(const char *functionName, const char *stage,
+                        const char *path) {
+  Serial.printf("[%s] %s path: %s\n", functionName, stage, path);
+}
 } // namespace
 
 ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config,
@@ -148,7 +153,7 @@ bool ImageScreen::isUpdateNeeded(const StatusMetadata &status) const {
 bool ImageScreen::downloadBinaryToLittleFS(const String &url,
                                            const String &ifNoneMatch) {
   const String binaryUrl = url.length() > 0 ? url : getBinaryUrl();
-  Serial.println(String("Binary path audit [download target]: ") + kBinaryCachePath);
+  logBinaryPathStage(__func__, "download target", kBinaryCachePath);
   Serial.println("Binary download URL: " + binaryUrl);
   Serial.println(String("Binary target path: ") + kBinaryCachePath);
 
@@ -188,12 +193,12 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
     return false;
   }
 
-  if (LittleFS.exists(kBinaryCachePath)) {
-    Serial.println(String("Binary path audit [exists check]: ") + kBinaryCachePath);
-    LittleFS.remove(kBinaryCachePath);
+  logBinaryPathStage(__func__, "pre-open remove", kBinaryCachePath);
+  if (!LittleFS.remove(kBinaryCachePath)) {
+    Serial.println("[downloadBinaryToLittleFS] pre-open remove: file did not exist");
   }
 
-  Serial.println(String("Binary path audit [open write]: ") + kBinaryCachePath);
+  logBinaryPathStage(__func__, "open write", kBinaryCachePath);
   File out = LittleFS.open(kBinaryCachePath, "w");
   if (!out) {
     Serial.println("Binary download failed: file open failed");
@@ -224,7 +229,7 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
       Serial.printf("Binary download failed: short write (%u/%u)\n",
                     (unsigned int)bytesWritten, (unsigned int)bytesRead);
       out.close();
-      Serial.println(String("Binary path audit [cleanup on error]: ") + kBinaryCachePath);
+      logBinaryPathStage(__func__, "cleanup on error", kBinaryCachePath);
       http.end();
       LittleFS.remove(kBinaryCachePath);
       return false;
@@ -236,17 +241,16 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   Serial.printf("Binary file write complete: %u bytes\n",
                 (unsigned int)totalWritten);
   out.flush();
+  Serial.println("[downloadBinaryToLittleFS] file flush complete");
   out.close();
-  const bool closeResult = !out;
-  Serial.printf("Binary file close complete: %s\n",
-                closeResult ? "success" : "failed");
+  Serial.println("[downloadBinaryToLittleFS] file close complete");
   http.end();
 
   Serial.printf("Binary download completed: %u bytes\n", (unsigned int)totalWritten);
   if (totalWritten != kNativeBinarySize) {
     Serial.printf("Binary download failed: expected %u bytes\n",
                   (unsigned int)kNativeBinarySize);
-    Serial.println(String("Binary path audit [cleanup size mismatch]: ") + kBinaryCachePath);
+    logBinaryPathStage(__func__, "cleanup size mismatch", kBinaryCachePath);
     LittleFS.remove(kBinaryCachePath);
     return false;
   }
@@ -255,7 +259,7 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
 }
 
 bool ImageScreen::renderBinaryFromLittleFS() {
-  Serial.println(String("Binary path audit [render open read]: ") + kBinaryCachePath);
+  logBinaryPathStage(__func__, "render open read", kBinaryCachePath);
   Serial.println(String("Render start from ") + kBinaryCachePath);
   File in = LittleFS.open(kBinaryCachePath, FILE_READ);
   if (!in) {
@@ -267,6 +271,7 @@ bool ImageScreen::renderBinaryFromLittleFS() {
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
   display.setFullWindow();
 
+  logBinaryPathStage(__func__, "decode framebuffer read", kBinaryCachePath);
   const bool loaded = display.loadNativeFrameBuffer(in, kNativeBinarySize);
   in.close();
 
@@ -277,7 +282,7 @@ bool ImageScreen::renderBinaryFromLittleFS() {
 
   display.display();
   display.hibernate();
-  Serial.println("Render success");
+  Serial.println("[renderBinaryFromLittleFS] render success");
   return true;
 }
 
@@ -341,7 +346,7 @@ void ImageScreen::render() {
   } else {
     Serial.println("Render failure");
   }
-  Serial.println(String("Binary path audit [final cleanup]: ") + kBinaryCachePath);
+  logBinaryPathStage(__func__, "final cleanup", kBinaryCachePath);
   LittleFS.remove(kBinaryCachePath);
   LittleFS.end();
 }
