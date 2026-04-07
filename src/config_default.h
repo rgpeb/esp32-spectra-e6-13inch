@@ -6,7 +6,10 @@
 
 const char DEFAULT_WIFI_SSID[] = "";
 const char DEFAULT_WIFI_PASSWORD[] = "";
-const char DEFAULT_IMAGE_URL[] =
-    "https://photo-host-production.up.railway.app/device/current.jpg";
+
+// Dedicated appliance update target (binary-first flow)
+const char DEVICE_SERVER_BASE_URL[] =
+    "https://photo-host-production.up.railway.app";
+const char DEVICE_ID[] = "esp32-spectra-e6-13inch";
 
 #endif  // CONFIG_DEFAULT_H

@@ -138,6 +138,46 @@ void DisplayAdapter::sendFrameBufferToDisplay() {
   Serial.println("Framebuffer transfer complete.");
 }
 
+
+bool DisplayAdapter::loadNativeFrameBuffer(File &file, size_t expectedSize) {
+  if (!_frameBuffer) {
+    Serial.println("Binary render failed: framebuffer not initialized");
+    return false;
+  }
+
+  if (!file) {
+    Serial.println("Binary render failed: file handle invalid");
+    return false;
+  }
+
+  const size_t fileSize = file.size();
+  if (fileSize != expectedSize) {
+    Serial.printf("Binary render failed: unexpected file size %u (expected %u)\n",
+                  (unsigned int)fileSize, (unsigned int)expectedSize);
+    return false;
+  }
+
+  if (!file.seek(0)) {
+    Serial.println("Binary render failed: unable to rewind file");
+    return false;
+  }
+
+  size_t totalRead = 0;
+  while (totalRead < expectedSize) {
+    const size_t chunk = min((size_t)2048, expectedSize - totalRead);
+    const size_t n = file.read(_frameBuffer + totalRead, chunk);
+    if (n == 0) {
+      Serial.printf("Binary render failed: short read at %u bytes\n",
+                    (unsigned int)totalRead);
+      return false;
+    }
+    totalRead += n;
+  }
+
+  Serial.printf("Binary framebuffer loaded: %u bytes\n", (unsigned int)totalRead);
+  return totalRead == expectedSize;
+}
+
 void DisplayAdapter::display(bool partial_update_mode) {
   printf("DisplayAdapter::display() started... \r\n");
   sendFrameBufferToDisplay();
