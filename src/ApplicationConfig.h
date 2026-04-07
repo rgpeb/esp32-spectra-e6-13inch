@@ -37,6 +37,10 @@ struct ApplicationConfig {
   uint8_t powerMode;   // PowerMode enum value
   uint16_t sleepMinutes;
 
+  // Persisted binary update tracking metadata.
+  char lastStatusVersion[64];
+  char lastStatusEtag[128];
+
   static const int DISPLAY_ROTATION = 2;
 
   ApplicationConfig() {
@@ -45,6 +49,9 @@ struct ApplicationConfig {
 
     strncpy(wifiSSID, DEFAULT_WIFI_SSID, sizeof(wifiSSID) - 1);
     strncpy(wifiPassword, DEFAULT_WIFI_PASSWORD, sizeof(wifiPassword) - 1);
+
+    memset(lastStatusVersion, 0, sizeof(lastStatusVersion));
+    memset(lastStatusEtag, 0, sizeof(lastStatusEtag));
 
     ditherMode = DITHER_FLOYD_STEINBERG;
     scalingMode = SCALE_FIT;

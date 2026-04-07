@@ -3,6 +3,7 @@
 
 #include <Adafruit_GFX.h>
 #include <Arduino.h>
+#include <FS.h>
 
 
 // Good-Display manufacturer driver (C linkage)
@@ -43,6 +44,9 @@ class DisplayAdapter : public Adafruit_GFX {
   void fillScreen(uint16_t color);
   void display(bool partial_update_mode = false);
   void hibernate();
+
+  // Binary-native render path (expects packed 4-bit pixel buffer).
+  bool loadNativeFrameBuffer(File &file, size_t expectedSize = (EPD_NATIVE_WIDTH * EPD_NATIVE_HEIGHT) / 2);
 
   // Adafruit_GFX required override
   void drawPixel(int16_t x, int16_t y, uint16_t color) override;

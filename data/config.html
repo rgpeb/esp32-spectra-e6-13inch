@@ -10,17 +10,11 @@
     label { display: block; margin: 12px 0 6px; font-weight: 600; }
     input, select, button { width: 100%; padding: 10px; margin-bottom: 8px; }
     .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
-    .small { font-size: 0.85rem; color: #555; word-break: break-all; }
     .status { min-height: 20px; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <h1>E-Ink Photo Frame</h1>
-
-  <div class="card">
-    <div><strong>Fixed image source:</strong></div>
-    <div class="small">{{FIXED_IMAGE_URL}}</div>
-  </div>
 
   <form id="configForm" class="card">
     <label for="ssid">WiFi SSID</label>
@@ -39,7 +33,7 @@
   </form>
 
   <div class="card">
-    <button id="refreshBtn" type="button">Refresh Display Now</button>
+    <button id="refreshBtn" type="button">Refresh Now</button>
   </div>
 
   <div id="status" class="status"></div>
@@ -61,18 +55,18 @@
       try {
         const res = await fetch('/save', { method: 'POST', body });
         if (!res.ok) throw new Error('save failed');
-        setStatus('Saved. Device will use the fixed remote image URL.');
+        setStatus('Saved.');
       } catch (_) {
         setStatus('Failed to save settings.', true);
       }
     });
 
     refreshBtn.addEventListener('click', async () => {
-      setStatus('Refreshing display...');
+      setStatus('Requesting refresh...');
       try {
         const res = await fetch('/api/refresh-display', { method: 'POST' });
         if (!res.ok) throw new Error('refresh failed');
-        setStatus('Refresh requested successfully.');
+        setStatus('Refresh requested.');
       } catch (_) {
         setStatus('Failed to trigger refresh.', true);
       }

@@ -52,23 +52,36 @@ std::unique_ptr<ApplicationConfig> ApplicationConfigStorage::load() {
     return nullptr;
   }
 
-  size_t requiredSize = sizeof(ApplicationConfig);
-  std::unique_ptr<ApplicationConfig> config(new ApplicationConfig());
-
-  err = nvs_get_blob(nvsHandle, CONFIG_KEY, config.get(), &requiredSize);
-  nvs_close(nvsHandle);
-
+  size_t blobSize = 0;
+  err = nvs_get_blob(nvsHandle, CONFIG_KEY, nullptr, &blobSize);
   if (err == ESP_ERR_NVS_NOT_FOUND) {
+    nvs_close(nvsHandle);
     Serial.println("No configuration found in NVS");
     return nullptr;
   } else if (err != ESP_OK) {
+    nvs_close(nvsHandle);
+    Serial.printf("Error reading config size from NVS: %s\n", esp_err_to_name(err));
+    return nullptr;
+  }
+
+  std::unique_ptr<ApplicationConfig> config(new ApplicationConfig());
+  std::unique_ptr<uint8_t[]> raw(new uint8_t[blobSize]);
+
+  size_t readSize = blobSize;
+  err = nvs_get_blob(nvsHandle, CONFIG_KEY, raw.get(), &readSize);
+  nvs_close(nvsHandle);
+
+  if (err != ESP_OK) {
     Serial.printf("Error reading config from NVS: %s\n", esp_err_to_name(err));
     return nullptr;
   }
 
-  if (requiredSize != sizeof(ApplicationConfig)) {
-    Serial.println("Configuration size mismatch, ignoring stored config");
-    return nullptr;
+  size_t copySize = (blobSize < sizeof(ApplicationConfig)) ? blobSize : sizeof(ApplicationConfig);
+  memcpy(config.get(), raw.get(), copySize);
+
+  if (blobSize < sizeof(ApplicationConfig)) {
+    Serial.printf("Configuration migrated from older schema (%u -> %u bytes).\n",
+                  (unsigned int)blobSize, (unsigned int)sizeof(ApplicationConfig));
   }
 
   Serial.println("Configuration loaded from NVS successfully");

@@ -164,8 +164,6 @@ String ConfigurationServer::getConfigurationPage() {
   String html = htmlTemplate;
   html.replace("{{CURRENT_SSID}}", currentConfiguration.ssid);
   html.replace("{{CURRENT_PASSWORD}}", currentConfiguration.password);
-  html.replace("{{FIXED_IMAGE_URL}}", String(DEFAULT_IMAGE_URL));
-
   setSelected(html, "{{POWER_SEL_SLEEP}}", currentConfiguration.powerMode == 0);
   setSelected(html, "{{POWER_SEL_AWAKE}}", currentConfiguration.powerMode == 1);
   return html;
