@@ -177,6 +177,8 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   HTTPClient http;
   http.begin(*client, binaryUrl);
   http.setTimeout(30000);
+  const char *headerKeys[] = {"Content-Length"};
+  http.collectHeaders(headerKeys, 1);
   if (ifNoneMatch.length() > 0) {
     http.addHeader("If-None-Match", ifNoneMatch);
   }
@@ -209,6 +211,31 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   Serial.println("Binary download: file open success");
 
   WiFiClient *stream = http.getStreamPtr();
+  const String contentLengthHeader = http.header("Content-Length");
+  const int reportedContentLength = http.getSize();
+  size_t expectedContentLength = 0;
+  bool hasExpectedContentLength = false;
+  if (contentLengthHeader.length() > 0) {
+    const long parsedContentLength = atol(contentLengthHeader.c_str());
+    if (parsedContentLength > 0) {
+      expectedContentLength = static_cast<size_t>(parsedContentLength);
+      hasExpectedContentLength = true;
+    }
+  } else if (reportedContentLength > 0) {
+    expectedContentLength = static_cast<size_t>(reportedContentLength);
+    hasExpectedContentLength = true;
+  }
+  if (hasExpectedContentLength) {
+    Serial.printf(
+        "Binary download: Content-Length=%u bytes (header='%s', http.getSize()=%d)\n",
+        (unsigned int)expectedContentLength, contentLengthHeader.c_str(),
+        reportedContentLength);
+  } else {
+    Serial.printf(
+        "Binary download: Content-Length missing/unknown (header='%s', http.getSize()=%d), using stall timeout fallback\n",
+        contentLengthHeader.c_str(), reportedContentLength);
+  }
+
   uint8_t buffer[kDownloadChunkSize];
   size_t totalWritten = 0;
   unsigned long lastProgressMs = millis();
@@ -216,7 +243,8 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   bool abortedForStall = false;
   String loopExitReason = "loop condition false";
 
-  while (http.connected() || stream->available()) {
+  while (hasExpectedContentLength ? (totalWritten < expectedContentLength)
+                                  : (http.connected() || stream->available())) {
     const size_t available = stream->available();
     const size_t toRead = available > 0 ? min(available, kDownloadChunkSize)
                                         : kDownloadChunkSize;
@@ -261,7 +289,14 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   }
 
   if (loopExitReason == "loop condition false") {
-    loopExitReason = "HTTP disconnected and stream had no available bytes";
+    if (hasExpectedContentLength && totalWritten >= expectedContentLength) {
+      loopExitReason = "reached expected Content-Length";
+      Serial.printf(
+          "Binary download loop exit: reached expected Content-Length (%u/%u bytes)\n",
+          (unsigned int)totalWritten, (unsigned int)expectedContentLength);
+    } else {
+      loopExitReason = "HTTP disconnected and stream had no available bytes";
+    }
   }
   Serial.printf(
       "Binary download loop exit: reason='%s', totalWritten=%u, elapsedMs=%lu\n",
