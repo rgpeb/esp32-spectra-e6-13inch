@@ -26,12 +26,11 @@ private:
 
   String getStatusUrl() const;
   String getBinaryUrl() const;
-  String normalizeLittleFSPath(const String &path) const;
   StatusMetadata fetchStatusMetadata();
   bool isUpdateNeeded(const StatusMetadata &status) const;
-  bool downloadBinaryToLittleFS(const String &url, const String &path,
+  bool downloadBinaryToLittleFS(const String &url,
                                 const String &ifNoneMatch = "");
-  bool renderBinaryFromLittleFS(const String &path);
+  bool renderBinaryFromLittleFS();
   void persistStatusMetadata(const StatusMetadata &status);
 
 public:
