@@ -13,11 +13,18 @@ struct Configuration {
   String ssid;
   String password;
   uint8_t powerMode = 0;
+  String pairingToken;
+  String pairingPageBaseUrl;
+  String pairingStatusPath;
 
   Configuration() = default;
 
-  Configuration(const String &ssid, const String &password, uint8_t powerMode)
-      : ssid(ssid), password(password), powerMode(powerMode) {}
+  Configuration(const String &ssid, const String &password, uint8_t powerMode,
+                const String &pairingToken, const String &pairingPageBaseUrl,
+                const String &pairingStatusPath)
+      : ssid(ssid), password(password), powerMode(powerMode),
+        pairingToken(pairingToken), pairingPageBaseUrl(pairingPageBaseUrl),
+        pairingStatusPath(pairingStatusPath) {}
 };
 
 using OnSaveCallback = std::function<void(const Configuration &config)>;

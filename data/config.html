@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Photo Frame Setup</title>
+  <title>Photo Frame Onboarding</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 16px; }
     h1 { font-size: 1.3rem; }
@@ -14,7 +14,7 @@
   </style>
 </head>
 <body>
-  <h1>E-Ink Photo Frame</h1>
+  <h1>E-Ink Photo Frame Onboarding</h1>
 
   <form id="configForm" class="card">
     <label for="ssid">WiFi SSID</label>
@@ -33,7 +33,9 @@
   </form>
 
   <div class="card">
-    <button id="refreshBtn" type="button">Refresh Now</button>
+    <p><strong>Pairing token:</strong> <code id="pairingToken">{{PAIRING_TOKEN}}</code></p>
+    <p>After WiFi connects, finish pairing here:</p>
+    <p><a id="pairingLink" href="{{PAIRING_URL}}" target="_blank" rel="noopener">{{PAIRING_URL}}</a></p>
   </div>
 
   <div id="status" class="status"></div>
@@ -41,7 +43,7 @@
   <script>
     const statusEl = document.getElementById('status');
     const form = document.getElementById('configForm');
-    const refreshBtn = document.getElementById('refreshBtn');
+    const pairingLink = document.getElementById('pairingLink');
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
@@ -50,25 +52,24 @@
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      setStatus('Saving...');
+      setStatus('Saving WiFi settings...');
       const body = new URLSearchParams(new FormData(form));
       try {
         const res = await fetch('/save', { method: 'POST', body });
         if (!res.ok) throw new Error('save failed');
-        setStatus('Saved.');
+        const data = await res.json();
+        if (data?.pairingUrl) {
+          pairingLink.href = data.pairingUrl;
+          pairingLink.textContent = data.pairingUrl;
+        }
+        if (data?.wifiConnected) {
+          setStatus('WiFi connected. Opening pairing page...');
+          setTimeout(() => window.location.href = pairingLink.href, 800);
+        } else {
+          setStatus('Saved. If WiFi is not connected yet, reboot the frame then open the pairing link.');
+        }
       } catch (_) {
         setStatus('Failed to save settings.', true);
-      }
-    });
-
-    refreshBtn.addEventListener('click', async () => {
-      setStatus('Requesting refresh...');
-      try {
-        const res = await fetch('/api/refresh-display', { method: 'POST' });
-        if (!res.ok) throw new Error('refresh failed');
-        setStatus('Refresh requested.');
-      } catch (_) {
-        setStatus('Failed to trigger refresh.', true);
       }
     });
   </script>

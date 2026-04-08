@@ -32,13 +32,20 @@ ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config,
       forceFreshFetch(forceFreshFetch) {}
 
 String ImageScreen::getStatusUrl() const {
-  return String(DEVICE_SERVER_BASE_URL) + "/device/" + String(DEVICE_ID) +
+  return String(DEVICE_SERVER_BASE_URL) + "/device/" + getResolvedDeviceId() +
          "/status.json";
 }
 
 String ImageScreen::getBinaryUrl() const {
-  return String(DEVICE_SERVER_BASE_URL) + "/device/" + String(DEVICE_ID) +
+  return String(DEVICE_SERVER_BASE_URL) + "/device/" + getResolvedDeviceId() +
          "/current.bin";
+}
+
+String ImageScreen::getResolvedDeviceId() const {
+  if (config.hasAssignedDeviceId()) {
+    return String(config.assignedDeviceId);
+  }
+  return String(DEVICE_ID);
 }
 
 ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {

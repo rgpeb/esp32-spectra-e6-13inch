@@ -6,16 +6,81 @@
 #include "DisplayAdapter.h"
 #include "ImageScreen.h"
 #include "WiFiConnection.h"
+#include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <esp_sleep.h>
-
-namespace {
-constexpr unsigned long SERVER_LOOP_DELAY_MS = 10;
-constexpr unsigned long AWAKE_AUTO_REFRESH_MS = 5UL * 60UL * 1000UL;
-} // namespace
 
 DisplayType display;
 ApplicationConfigStorage configStorage;
 std::unique_ptr<ApplicationConfig> appConfig;
+
+namespace {
+constexpr unsigned long SERVER_LOOP_DELAY_MS = 10;
+constexpr unsigned long AWAKE_AUTO_REFRESH_MS = 5UL * 60UL * 1000UL;
+constexpr unsigned long PAIRING_POLL_INTERVAL_MS = 5000UL;
+
+String generatePairingToken() {
+  char token[65];
+  for (size_t i = 0; i < 32; ++i) {
+    const uint8_t value = static_cast<uint8_t>(esp_random() & 0xFF);
+    sprintf(&token[i * 2], "%02x", value);
+  }
+  token[64] = '\0';
+  return String(token);
+}
+
+String getPairingStatusUrl() {
+  return String(DEVICE_SERVER_BASE_URL) + String(PAIRING_STATUS_PATH) +
+         "?token=" + String(appConfig->pairingToken);
+}
+
+bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
+  if (!appConfig || !appConfig->hasPairingToken() || WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  const String url = getPairingStatusUrl();
+  std::unique_ptr<WiFiClient> client;
+  if (url.startsWith("https://")) {
+    auto secureClient = new WiFiClientSecure;
+    secureClient->setInsecure();
+    client.reset(secureClient);
+  } else {
+    client.reset(new WiFiClient);
+  }
+
+  HTTPClient http;
+  http.begin(*client, url);
+  http.setTimeout(10000);
+  const int status = http.GET();
+  if (status != HTTP_CODE_OK) {
+    http.end();
+    return false;
+  }
+
+  const String body = http.getString();
+  http.end();
+
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) {
+    return false;
+  }
+
+  JsonVariantConst deviceIdVar = doc["deviceId"];
+  if (!deviceIdVar.is<const char *>()) {
+    return false;
+  }
+
+  const String deviceId = String(deviceIdVar.as<const char *>());
+  if (deviceId.length() == 0) {
+    return false;
+  }
+
+  assignedDeviceIdOut = deviceId;
+  return true;
+}
+} // namespace
 
 void initializeDefaultConfig() {
   std::unique_ptr<ApplicationConfig> storedConfig = configStorage.load();
@@ -26,6 +91,17 @@ void initializeDefaultConfig() {
   } else {
     appConfig.reset(new ApplicationConfig());
     printf("Using default configuration.\n");
+  }
+
+  if (!appConfig->hasPairingToken()) {
+    const String token = generatePairingToken();
+    strncpy(appConfig->pairingToken, token.c_str(), sizeof(appConfig->pairingToken) - 1);
+    appConfig->pairingToken[sizeof(appConfig->pairingToken) - 1] = '\0';
+    if (configStorage.save(*appConfig)) {
+      printf("Generated and saved pairing token.\n");
+    } else {
+      printf("Failed to persist generated pairing token.\n");
+    }
   }
 }
 
@@ -55,7 +131,8 @@ void saveConfiguration(const Configuration &config) {
 
 void runWebServer(bool useAP) {
   Configuration serverConfig(appConfig->wifiSSID, appConfig->wifiPassword,
-                             appConfig->powerMode);
+                             appConfig->powerMode, appConfig->pairingToken,
+                             PAIRING_PAGE_BASE_URL, PAIRING_STATUS_PATH);
   ConfigurationServer server(serverConfig);
   server.run(saveConfiguration, useAP);
 
@@ -66,6 +143,7 @@ void runWebServer(bool useAP) {
   const unsigned long timeoutMs = alwaysAwake ? 0UL : 10UL * 60UL * 1000UL;
   unsigned long start = millis();
   unsigned long lastAutoRefresh = millis();
+  unsigned long lastPairingPoll = 0;
 
   while (true) {
     server.handleRequests();
@@ -81,6 +159,20 @@ void runWebServer(bool useAP) {
       printf("Always Awake auto refresh.\n");
       refreshDisplay();
       lastAutoRefresh = millis();
+    }
+
+    if (!appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED &&
+        (lastPairingPoll == 0 || millis() - lastPairingPoll >= PAIRING_POLL_INTERVAL_MS)) {
+      lastPairingPoll = millis();
+      String assignedDeviceId;
+      if (fetchAssignedDeviceIdFromPairing(assignedDeviceId)) {
+        strncpy(appConfig->assignedDeviceId, assignedDeviceId.c_str(),
+                sizeof(appConfig->assignedDeviceId) - 1);
+        appConfig->assignedDeviceId[sizeof(appConfig->assignedDeviceId) - 1] = '\0';
+        if (configStorage.save(*appConfig)) {
+          printf("Pairing complete. Assigned deviceId='%s'\n", appConfig->assignedDeviceId);
+        }
+      }
     }
 
     if (!alwaysAwake && timeoutMs > 0 && millis() - start >= timeoutMs) {

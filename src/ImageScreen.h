@@ -16,6 +16,7 @@ private:
   ApplicationConfig &config;
   ApplicationConfigStorage &configStorage;
   bool forceFreshFetch;
+  String getResolvedDeviceId() const;
 
   struct StatusMetadata {
     String version;

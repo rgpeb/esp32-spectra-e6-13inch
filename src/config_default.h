@@ -11,5 +11,8 @@ const char DEFAULT_WIFI_PASSWORD[] = "";
 const char DEVICE_SERVER_BASE_URL[] =
     "https://photo-host-production.up.railway.app";
 const char DEVICE_ID[] = "esp32-spectra-e6-13inch";
+const char PAIRING_PAGE_BASE_URL[] =
+    "https://photo-host-production.up.railway.app/pair";
+const char PAIRING_STATUS_PATH[] = "/pairing/status";
 
 #endif  // CONFIG_DEFAULT_H
