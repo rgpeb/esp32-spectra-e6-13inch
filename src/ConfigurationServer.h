@@ -45,6 +45,12 @@ public:
 
   bool isRefreshRequested() const { return refreshRequested; }
   void clearRefreshRequest() { refreshRequested = false; }
+  bool isResetSetupRequested() const { return resetSetupRequested; }
+  bool shouldClearPairingOnReset() const { return clearPairingOnReset; }
+  void clearResetSetupRequest() {
+    resetSetupRequested = false;
+    clearPairingOnReset = false;
+  }
 
 private:
   String deviceName;
@@ -57,6 +63,8 @@ private:
   DNSServer *dnsServer;
   bool isServerRunning;
   bool refreshRequested = false;
+  bool resetSetupRequested = false;
+  bool clearPairingOnReset = false;
 
   String htmlTemplate;
   OnSaveCallback onSaveCallback;
