@@ -344,6 +344,9 @@ bool ImageScreen::renderBinaryFromLittleFS() {
   display.init(115200);
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
   display.setFullWindow();
+  Serial.println("Render path: clearing panel to white before new image.");
+  display.fillScreen(GxEPD_WHITE);
+  display.display(false);
 
   logBinaryPathStage(__func__, "decode framebuffer read", kBinaryCachePath);
   const bool loaded = display.loadNativeFrameBuffer(in, kNativeBinarySize);
@@ -354,7 +357,8 @@ bool ImageScreen::renderBinaryFromLittleFS() {
     return false;
   }
 
-  display.display();
+  Serial.println("Render path: pushing new image with forced full refresh.");
+  display.display(false);
   display.hibernate();
   Serial.println("[renderBinaryFromLittleFS] render success");
   return true;
