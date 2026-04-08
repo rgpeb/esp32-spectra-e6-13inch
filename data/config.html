@@ -38,11 +38,10 @@
   </div>
 
   <div class="card">
-    <button id="resetSetupButton" type="button">Reset Frame Setup / Forget Network</button>
-    <label for="clearPairing">
-      <input id="clearPairing" type="checkbox" style="width:auto; margin-right:6px;" />
-      Also clear assigned deviceId / pairing state
-    </label>
+    <button id="forgetWifiButton" type="button">Forget WiFi</button>
+    <small>Clears saved WiFi credentials only. Keeps pairing/device identity and reboots into WiFi setup mode.</small>
+    <button id="factoryResetButton" type="button">Factory Reset / Reset Frame Setup</button>
+    <small>Clears WiFi credentials, pairing/device identity, version/ETag, and cached image state. Reboots to first-boot QR setup.</small>
   </div>
 
   <div id="status" class="status"></div>
@@ -51,12 +50,25 @@
     const statusEl = document.getElementById('status');
     const form = document.getElementById('configForm');
     const refreshNowButton = document.getElementById('refreshNowButton');
-    const resetSetupButton = document.getElementById('resetSetupButton');
-    const clearPairing = document.getElementById('clearPairing');
+    const forgetWifiButton = document.getElementById('forgetWifiButton');
+    const factoryResetButton = document.getElementById('factoryResetButton');
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
       statusEl.style.color = isError ? '#c00' : '#060';
+    }
+
+    async function requestReset(action, pendingMessage, successMessage) {
+      setStatus(pendingMessage);
+      const body = new URLSearchParams();
+      body.set('action', action);
+      try {
+        const res = await fetch('/api/reset-setup', { method: 'POST', body });
+        if (!res.ok) throw new Error('reset failed');
+        setStatus(successMessage);
+      } catch (_) {
+        setStatus('Failed to reset setup.', true);
+      }
     }
 
     form.addEventListener('submit', async (e) => {
@@ -88,25 +100,28 @@
       }
     });
 
-    resetSetupButton.addEventListener('click', async () => {
-      const withPairingReset = clearPairing.checked;
+    forgetWifiButton.addEventListener('click', async () => {
       const confirmed = window.confirm(
-        withPairingReset
-          ? 'Forget WiFi and clear pairing state? The frame will reboot into setup mode.'
-          : 'Forget WiFi credentials? The frame will reboot into setup mode.'
+        'Forget WiFi credentials only? Pairing/device identity will be kept. The frame will reboot into WiFi setup mode.'
       );
       if (!confirmed) return;
+      await requestReset(
+        'wifi',
+        'Clearing WiFi credentials and rebooting...',
+        'Forget WiFi requested. Rebooting into WiFi setup mode...'
+      );
+    });
 
-      setStatus('Resetting setup and rebooting...');
-      const body = new URLSearchParams();
-      body.set('clearPairing', withPairingReset ? '1' : '0');
-      try {
-        const res = await fetch('/api/reset-setup', { method: 'POST', body });
-        if (!res.ok) throw new Error('reset failed');
-        setStatus('Reset requested. Rebooting into QR + WiFi setup mode...');
-      } catch (_) {
-        setStatus('Failed to reset setup.', true);
-      }
+    factoryResetButton.addEventListener('click', async () => {
+      const confirmed = window.confirm(
+        'Factory Reset frame setup? This clears WiFi, pairing/device identity, and cache, then reboots to first-boot QR setup.'
+      );
+      if (!confirmed) return;
+      await requestReset(
+        'factory',
+        'Factory reset in progress and rebooting...',
+        'Factory reset requested. Rebooting into initial QR + setup flow...'
+      );
     });
   </script>
 </body>

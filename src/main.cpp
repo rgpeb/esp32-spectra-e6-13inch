@@ -2,12 +2,14 @@
 
 #include "ApplicationConfig.h"
 #include "ApplicationConfigStorage.h"
+#include "ConfigurationScreen.h"
 #include "ConfigurationServer.h"
 #include "DisplayAdapter.h"
 #include "ImageScreen.h"
 #include "WiFiConnection.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <LittleFS.h>
 #include <WiFiClientSecure.h>
 #include <esp_sleep.h>
 
@@ -19,6 +21,7 @@ namespace {
 constexpr unsigned long SERVER_LOOP_DELAY_MS = 10;
 constexpr unsigned long AWAKE_AUTO_REFRESH_MS = 5UL * 60UL * 1000UL;
 constexpr unsigned long PAIRING_POLL_INTERVAL_MS = 5000UL;
+constexpr const char *kBinaryCachePath = "/current.bin";
 
 String generatePairingToken() {
   char token[65];
@@ -95,6 +98,72 @@ bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
   assignedDeviceIdOut = deviceId;
   return true;
 }
+
+void showSetupScreen() {
+  ConfigurationScreen setupScreen(display);
+  setupScreen.render();
+  Serial.println("Setup QR screen shown");
+}
+
+void clearCachedBinaryState() {
+  if (!LittleFS.begin(true)) {
+    Serial.println("Cache/version/etag cleared: LittleFS mount failed while clearing binary cache");
+    return;
+  }
+
+  const bool removed = LittleFS.remove(kBinaryCachePath);
+  Serial.printf("Cached image/binary state cleared: %s (%s)\n",
+                removed ? "removed /current.bin" : "no /current.bin to remove",
+                kBinaryCachePath);
+  LittleFS.end();
+}
+
+void processResetAction(ResetAction resetAction) {
+  if (resetAction == RESET_ACTION_NONE) {
+    return;
+  }
+
+  const bool isFactoryReset = (resetAction == RESET_ACTION_FACTORY_RESET);
+  Serial.printf("Reset setup requested from web UI (action=%s).\n",
+                isFactoryReset ? "factory-reset" : "forget-wifi");
+
+  memset(appConfig->wifiSSID, 0, sizeof(appConfig->wifiSSID));
+  memset(appConfig->wifiPassword, 0, sizeof(appConfig->wifiPassword));
+  Serial.println("WiFi credentials cleared");
+
+  if (isFactoryReset) {
+    memset(appConfig->assignedDeviceId, 0, sizeof(appConfig->assignedDeviceId));
+    Serial.println("deviceId cleared");
+
+    memset(appConfig->pairingToken, 0, sizeof(appConfig->pairingToken));
+    Serial.println("Pairing token/state cleared");
+
+    memset(appConfig->lastStatusVersion, 0, sizeof(appConfig->lastStatusVersion));
+    memset(appConfig->lastStatusEtag, 0, sizeof(appConfig->lastStatusEtag));
+    Serial.println("Cache/version/etag cleared");
+
+    clearCachedBinaryState();
+  }
+
+  if (!configStorage.save(*appConfig)) {
+    Serial.println("Failed to persist reset state before reboot");
+  }
+
+  if (isFactoryReset) {
+    display.init(115200);
+    display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
+    display.setFullWindow();
+    display.fillScreen(GxEPD_WHITE);
+    display.display(false);
+    display.hibernate();
+    Serial.println("Display cleared");
+
+    showSetupScreen();
+  }
+
+  delay(300);
+  ESP.restart();
+}
 } // namespace
 
 void initializeDefaultConfig() {
@@ -169,22 +238,10 @@ void runWebServer(bool useAP) {
       refreshDisplay(true);
     }
 
-    if (server.isResetSetupRequested()) {
-      const bool clearPairing = server.shouldClearPairingOnReset();
-      server.clearResetSetupRequest();
-      Serial.printf("Reset setup requested from web UI (clearPairing=%s).\n",
-                    clearPairing ? "true" : "false");
-      memset(appConfig->wifiSSID, 0, sizeof(appConfig->wifiSSID));
-      memset(appConfig->wifiPassword, 0, sizeof(appConfig->wifiPassword));
-      memset(appConfig->lastStatusVersion, 0, sizeof(appConfig->lastStatusVersion));
-      memset(appConfig->lastStatusEtag, 0, sizeof(appConfig->lastStatusEtag));
-      if (clearPairing) {
-        memset(appConfig->assignedDeviceId, 0, sizeof(appConfig->assignedDeviceId));
-        memset(appConfig->pairingToken, 0, sizeof(appConfig->pairingToken));
-      }
-      configStorage.save(*appConfig);
-      delay(300);
-      ESP.restart();
+    if (server.getResetActionRequested() != RESET_ACTION_NONE) {
+      const ResetAction resetAction = server.getResetActionRequested();
+      server.clearResetActionRequest();
+      processResetAction(resetAction);
     }
 
     if (alwaysAwake && WiFi.status() == WL_CONNECTED &&
@@ -254,27 +311,12 @@ void setup() {
 
   if (WiFi.status() == WL_CONNECTED) {
     refreshDisplay();
+  } else {
+    showSetupScreen();
   }
 
   const bool useAP = WiFi.status() != WL_CONNECTED;
   runWebServer(useAP);
-
-  if (appConfig->isAlwaysAwake()) {
-    printf("Power mode: Always Awake. Staying in loop mode.\n");
-    return;
-  }
-
-  uint64_t sleepUs = (uint64_t)appConfig->sleepMinutes * 60ULL * 1000000ULL;
-  esp_sleep_enable_timer_wakeup(sleepUs);
-  printf("Power mode: Sleep. Entering deep sleep for %u minute(s).\n",
-         appConfig->sleepMinutes);
-  esp_deep_sleep_start();
 }
 
-void loop() {
-  if (appConfig && appConfig->isAlwaysAwake()) {
-    delay(1000);
-    return;
-  }
-  delay(1000);
-}
+void loop() {}
