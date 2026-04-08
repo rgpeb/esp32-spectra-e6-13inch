@@ -40,6 +40,8 @@ struct ApplicationConfig {
   // Persisted binary update tracking metadata.
   char lastStatusVersion[64];
   char lastStatusEtag[128];
+  char pairingToken[65];
+  char assignedDeviceId[96];
 
   static const int DISPLAY_ROTATION = 2;
 
@@ -52,6 +54,8 @@ struct ApplicationConfig {
 
     memset(lastStatusVersion, 0, sizeof(lastStatusVersion));
     memset(lastStatusEtag, 0, sizeof(lastStatusEtag));
+    memset(pairingToken, 0, sizeof(pairingToken));
+    memset(assignedDeviceId, 0, sizeof(assignedDeviceId));
 
     ditherMode = DITHER_FLOYD_STEINBERG;
     scalingMode = SCALE_FIT;
@@ -62,6 +66,9 @@ struct ApplicationConfig {
   bool hasValidWiFiCredentials() const {
     return strlen(wifiSSID) > 0 && strlen(wifiPassword) > 0;
   }
+
+  bool hasPairingToken() const { return strlen(pairingToken) > 0; }
+  bool hasAssignedDeviceId() const { return strlen(assignedDeviceId) > 0; }
 
   bool isAlwaysAwake() const { return powerMode == POWER_MODE_ALWAYS_AWAKE; }
 };

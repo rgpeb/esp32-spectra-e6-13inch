@@ -1,6 +1,7 @@
 #include "ConfigurationServer.h"
 
 #include "ApplicationConfig.h"
+#include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <WiFiAP.h>
@@ -35,7 +36,7 @@ void ConfigurationServer::run(OnSaveCallback onSaveCallback, bool startAP) {
     WiFi.disconnect(true);
     delay(1000);
 
-    WiFi.mode(WIFI_AP);
+    WiFi.mode(WIFI_AP_STA);
     bool apStarted = WiFi.softAP(wifiAccessPointName.c_str(),
                                  wifiAccessPointPassword.c_str());
 
@@ -130,8 +131,38 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     }
 
     currentConfiguration = config;
-    request->send(200, "text/plain", "OK");
     onSaveCallback(config);
+
+    bool wifiConnected = false;
+    String stationIp = "";
+    const unsigned long connectTimeoutMs = 20000;
+    WiFi.disconnect(false, false);
+    WiFi.begin(config.ssid.c_str(), config.password.c_str());
+    const unsigned long connectStart = millis();
+    while (millis() - connectStart < connectTimeoutMs) {
+      if (WiFi.status() == WL_CONNECTED) {
+        wifiConnected = true;
+        stationIp = WiFi.localIP().toString();
+        break;
+      }
+      delay(250);
+    }
+
+    const String pairingUrl = currentConfiguration.pairingPageBaseUrl +
+                              "?token=" + currentConfiguration.pairingToken;
+
+    JsonDocument doc;
+    doc["ok"] = true;
+    doc["wifiConnected"] = wifiConnected;
+    doc["pairingToken"] = currentConfiguration.pairingToken;
+    doc["pairingUrl"] = pairingUrl;
+    if (wifiConnected) {
+      doc["stationIp"] = stationIp;
+    }
+
+    String payload;
+    serializeJson(doc, payload);
+    request->send(200, "application/json", payload);
     return;
   }
 
@@ -164,6 +195,10 @@ String ConfigurationServer::getConfigurationPage() {
   String html = htmlTemplate;
   html.replace("{{CURRENT_SSID}}", currentConfiguration.ssid);
   html.replace("{{CURRENT_PASSWORD}}", currentConfiguration.password);
+  html.replace("{{PAIRING_TOKEN}}", currentConfiguration.pairingToken);
+  html.replace("{{PAIRING_URL}}",
+               currentConfiguration.pairingPageBaseUrl + "?token=" +
+                   currentConfiguration.pairingToken);
   setSelected(html, "{{POWER_SEL_SLEEP}}", currentConfiguration.powerMode == 0);
   setSelected(html, "{{POWER_SEL_AWAKE}}", currentConfiguration.powerMode == 1);
   return html;
