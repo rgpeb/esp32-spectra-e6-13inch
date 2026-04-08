@@ -13,15 +13,18 @@
 class ConfigurationScreen : public Screen {
  private:
   DisplayType& display;
-  String accessPointName;
-  String accessPointPassword;
+  String qrPayload;
+  String titleText;
+  String subtitleText;
   U8G2_FOR_ADAFRUIT_GFX gfx;
 
-  void drawQRCode(const String& wifiString, int x, int y, int scale = 3);
-  String generateWiFiQRString() const;
+  void drawQRCode(const String& payload, int x, int y, int scale = 3);
 
  public:
-  ConfigurationScreen(DisplayType& display);
+  ConfigurationScreen(DisplayType& display, const String& qrPayload,
+                      const String& titleText, const String& subtitleText);
+  static String buildWiFiPortalQrPayload(const String& portalUrl);
+  static String buildPairingQrPayload(const String& pairingUrl);
 
   void render() override;
   int nextRefreshInSeconds() override;
