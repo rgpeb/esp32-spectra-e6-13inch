@@ -35,6 +35,20 @@ String getPairingStatusUrl() {
          "?token=" + String(appConfig->pairingToken);
 }
 
+void attachLocalPortalHeaders(HTTPClient &http) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  const String localIp = WiFi.localIP().toString();
+  if (localIp.length() == 0 || localIp == "0.0.0.0") {
+    return;
+  }
+
+  http.addHeader("X-Frame-Local-IP", localIp);
+  http.addHeader("X-Frame-Portal-URL", "http://" + localIp + "/");
+}
+
 bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
   if (!appConfig || !appConfig->hasPairingToken() || WiFi.status() != WL_CONNECTED) {
     return false;
@@ -53,6 +67,7 @@ bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
   HTTPClient http;
   http.begin(*client, url);
   http.setTimeout(10000);
+  attachLocalPortalHeaders(http);
   const int status = http.GET();
   if (status != HTTP_CODE_OK) {
     http.end();
@@ -152,6 +167,24 @@ void runWebServer(bool useAP) {
       server.clearRefreshRequest();
       printf("Manual refresh requested from web UI.\n");
       refreshDisplay(true);
+    }
+
+    if (server.isResetSetupRequested()) {
+      const bool clearPairing = server.shouldClearPairingOnReset();
+      server.clearResetSetupRequest();
+      Serial.printf("Reset setup requested from web UI (clearPairing=%s).\n",
+                    clearPairing ? "true" : "false");
+      memset(appConfig->wifiSSID, 0, sizeof(appConfig->wifiSSID));
+      memset(appConfig->wifiPassword, 0, sizeof(appConfig->wifiPassword));
+      memset(appConfig->lastStatusVersion, 0, sizeof(appConfig->lastStatusVersion));
+      memset(appConfig->lastStatusEtag, 0, sizeof(appConfig->lastStatusEtag));
+      if (clearPairing) {
+        memset(appConfig->assignedDeviceId, 0, sizeof(appConfig->assignedDeviceId));
+        memset(appConfig->pairingToken, 0, sizeof(appConfig->pairingToken));
+      }
+      configStorage.save(*appConfig);
+      delay(300);
+      ESP.restart();
     }
 
     if (alwaysAwake && WiFi.status() == WL_CONNECTED &&

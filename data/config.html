@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Photo Frame Onboarding</title>
+  <title>Photo Frame Local Portal</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 16px; }
     h1 { font-size: 1.3rem; }
@@ -14,7 +14,7 @@
   </style>
 </head>
 <body>
-  <h1>E-Ink Photo Frame Onboarding</h1>
+  <h1>E-Ink Photo Frame Local Portal</h1>
 
   <form id="configForm" class="card">
     <label for="ssid">WiFi SSID</label>
@@ -33,9 +33,16 @@
   </form>
 
   <div class="card">
-    <p><strong>Pairing token:</strong> <code id="pairingToken">{{PAIRING_TOKEN}}</code></p>
-    <p>After WiFi connects, finish pairing here:</p>
-    <p><a id="pairingLink" href="{{PAIRING_URL}}" target="_blank" rel="noopener">{{PAIRING_URL}}</a></p>
+    <button id="refreshNowButton" type="button">Refresh Now</button>
+    <small>Checks <code>status.json</code>, downloads <code>current.bin</code> if changed, and redraws immediately.</small>
+  </div>
+
+  <div class="card">
+    <button id="resetSetupButton" type="button">Reset Frame Setup / Forget Network</button>
+    <label for="clearPairing">
+      <input id="clearPairing" type="checkbox" style="width:auto; margin-right:6px;" />
+      Also clear assigned deviceId / pairing state
+    </label>
   </div>
 
   <div id="status" class="status"></div>
@@ -43,7 +50,9 @@
   <script>
     const statusEl = document.getElementById('status');
     const form = document.getElementById('configForm');
-    const pairingLink = document.getElementById('pairingLink');
+    const refreshNowButton = document.getElementById('refreshNowButton');
+    const resetSetupButton = document.getElementById('resetSetupButton');
+    const clearPairing = document.getElementById('clearPairing');
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
@@ -58,18 +67,45 @@
         const res = await fetch('/save', { method: 'POST', body });
         if (!res.ok) throw new Error('save failed');
         const data = await res.json();
-        if (data?.pairingUrl) {
-          pairingLink.href = data.pairingUrl;
-          pairingLink.textContent = data.pairingUrl;
-        }
         if (data?.wifiConnected) {
-          setStatus('WiFi connected. Opening pairing page...');
-          setTimeout(() => window.location.href = pairingLink.href, 800);
+          setStatus('WiFi connected and settings saved.');
         } else {
-          setStatus('Saved. If WiFi is not connected yet, reboot the frame then open the pairing link.');
+          setStatus('Saved. Frame will use these credentials on next connection attempt.');
         }
       } catch (_) {
         setStatus('Failed to save settings.', true);
+      }
+    });
+
+    refreshNowButton.addEventListener('click', async () => {
+      setStatus('Refreshing display now...');
+      try {
+        const res = await fetch('/api/refresh-display', { method: 'POST' });
+        if (!res.ok) throw new Error('refresh failed');
+        setStatus('Refresh requested. The frame will check status and redraw if needed.');
+      } catch (_) {
+        setStatus('Failed to request refresh.', true);
+      }
+    });
+
+    resetSetupButton.addEventListener('click', async () => {
+      const withPairingReset = clearPairing.checked;
+      const confirmed = window.confirm(
+        withPairingReset
+          ? 'Forget WiFi and clear pairing state? The frame will reboot into setup mode.'
+          : 'Forget WiFi credentials? The frame will reboot into setup mode.'
+      );
+      if (!confirmed) return;
+
+      setStatus('Resetting setup and rebooting...');
+      const body = new URLSearchParams();
+      body.set('clearPairing', withPairingReset ? '1' : '0');
+      try {
+        const res = await fetch('/api/reset-setup', { method: 'POST', body });
+        if (!res.ok) throw new Error('reset failed');
+        setStatus('Reset requested. Rebooting into QR + WiFi setup mode...');
+      } catch (_) {
+        setStatus('Failed to reset setup.', true);
       }
     });
   </script>

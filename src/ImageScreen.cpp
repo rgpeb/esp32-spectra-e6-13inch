@@ -23,6 +23,18 @@ void logBinaryPathStage(const char *functionName, const char *stage,
                         const char *path) {
   Serial.printf("[%s] %s path: %s\n", functionName, stage, path);
 }
+
+void addLocalPortalHeaders(HTTPClient &http) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+  const String localIp = WiFi.localIP().toString();
+  if (localIp.length() == 0 || localIp == "0.0.0.0") {
+    return;
+  }
+  http.addHeader("X-Frame-Local-IP", localIp);
+  http.addHeader("X-Frame-Portal-URL", "http://" + localIp + "/");
+}
 } // namespace
 
 ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config,
@@ -65,6 +77,7 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
   HTTPClient http;
   http.begin(*client, statusUrl);
   http.setTimeout(15000);
+  addLocalPortalHeaders(http);
   const char *headerKeys[] = {"ETag"};
   http.collectHeaders(headerKeys, 1);
 

@@ -110,6 +110,18 @@ void ConfigurationServer::setupWebServer() {
                refreshRequested = true;
                request->send(200, "application/json", "{\"ok\":true}");
              });
+  server->on("/api/reset-setup", HTTP_POST,
+             [this](AsyncWebServerRequest *request) {
+               bool clearPairing = false;
+               if (request->hasParam("clearPairing", true)) {
+                 clearPairing =
+                     request->getParam("clearPairing", true)->value() == "1";
+               }
+               clearPairingOnReset = clearPairing;
+               resetSetupRequested = true;
+               request->send(200, "application/json",
+                             "{\"ok\":true,\"restarting\":true}");
+             });
 
   server->onNotFound(
       [this](AsyncWebServerRequest *request) { handleNotFound(request); });
