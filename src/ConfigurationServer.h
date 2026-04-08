@@ -29,6 +29,12 @@ struct Configuration {
 
 using OnSaveCallback = std::function<void(const Configuration &config)>;
 
+enum ResetAction : uint8_t {
+  RESET_ACTION_NONE = 0,
+  RESET_ACTION_FORGET_WIFI = 1,
+  RESET_ACTION_FACTORY_RESET = 2,
+};
+
 class ConfigurationServer {
 public:
   static const char *WIFI_AP_NAME;
@@ -45,12 +51,8 @@ public:
 
   bool isRefreshRequested() const { return refreshRequested; }
   void clearRefreshRequest() { refreshRequested = false; }
-  bool isResetSetupRequested() const { return resetSetupRequested; }
-  bool shouldClearPairingOnReset() const { return clearPairingOnReset; }
-  void clearResetSetupRequest() {
-    resetSetupRequested = false;
-    clearPairingOnReset = false;
-  }
+  ResetAction getResetActionRequested() const { return resetActionRequested; }
+  void clearResetActionRequest() { resetActionRequested = RESET_ACTION_NONE; }
 
 private:
   String deviceName;
@@ -63,8 +65,7 @@ private:
   DNSServer *dnsServer;
   bool isServerRunning;
   bool refreshRequested = false;
-  bool resetSetupRequested = false;
-  bool clearPairingOnReset = false;
+  ResetAction resetActionRequested = RESET_ACTION_NONE;
 
   String htmlTemplate;
   OnSaveCallback onSaveCallback;

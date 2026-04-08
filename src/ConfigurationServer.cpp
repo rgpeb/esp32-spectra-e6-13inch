@@ -112,13 +112,17 @@ void ConfigurationServer::setupWebServer() {
              });
   server->on("/api/reset-setup", HTTP_POST,
              [this](AsyncWebServerRequest *request) {
-               bool clearPairing = false;
-               if (request->hasParam("clearPairing", true)) {
-                 clearPairing =
-                     request->getParam("clearPairing", true)->value() == "1";
+               ResetAction action = RESET_ACTION_FORGET_WIFI;
+               if (request->hasParam("action", true)) {
+                 const String actionParam =
+                     request->getParam("action", true)->value();
+                 if (actionParam == "factory") {
+                   action = RESET_ACTION_FACTORY_RESET;
+                 } else if (actionParam == "wifi") {
+                   action = RESET_ACTION_FORGET_WIFI;
+                 }
                }
-               clearPairingOnReset = clearPairing;
-               resetSetupRequested = true;
+               resetActionRequested = action;
                request->send(200, "application/json",
                              "{\"ok\":true,\"restarting\":true}");
              });
