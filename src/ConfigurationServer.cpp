@@ -159,9 +159,14 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
       if (WiFi.status() == WL_CONNECTED) {
         wifiConnected = true;
         stationIp = WiFi.localIP().toString();
+        Serial.printf("WiFi setup succeeded from local portal. Station IP=%s\n",
+                      stationIp.c_str());
         break;
       }
       delay(250);
+    }
+    if (!wifiConnected) {
+      Serial.println("WiFi setup from local portal did not connect within timeout.");
     }
 
     const String pairingUrl = currentConfiguration.pairingPageBaseUrl +
