@@ -16,6 +16,8 @@ class ConfigurationScreen : public Screen {
   String qrPayload;
   String titleText;
   String subtitleText;
+  String helperText;
+  bool showQrCode;
   U8G2_FOR_ADAFRUIT_GFX gfx;
 
   void drawQRCode(const String& payload, int x, int y, int scale = 3);
@@ -25,6 +27,10 @@ class ConfigurationScreen : public Screen {
                       const String& titleText, const String& subtitleText);
   static String buildWiFiPortalQrPayload(const String& portalUrl);
   static String buildPairingQrPayload(const String& pairingUrl);
+  static ConfigurationScreen createStatusScreen(DisplayType& display,
+                                                const String& titleText,
+                                                const String& subtitleText,
+                                                const String& helperText);
 
   void render() override;
   int nextRefreshInSeconds() override;

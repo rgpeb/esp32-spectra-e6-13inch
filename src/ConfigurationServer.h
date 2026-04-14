@@ -53,6 +53,8 @@ public:
   void clearRefreshRequest() { refreshRequested = false; }
   ResetAction getResetActionRequested() const { return resetActionRequested; }
   void clearResetActionRequest() { resetActionRequested = RESET_ACTION_NONE; }
+  void setWifiConnectionStatus(bool connected);
+  void setAccountLinkedStatus(bool linked);
 
 private:
   String deviceName;
@@ -66,6 +68,8 @@ private:
   bool isServerRunning;
   bool refreshRequested = false;
   ResetAction resetActionRequested = RESET_ACTION_NONE;
+  bool wifiConnected = false;
+  bool accountLinked = false;
 
   String htmlTemplate;
   OnSaveCallback onSaveCallback;

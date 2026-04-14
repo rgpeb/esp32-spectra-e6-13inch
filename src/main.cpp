@@ -21,14 +21,21 @@ namespace {
 constexpr unsigned long SERVER_LOOP_DELAY_MS = 10;
 constexpr unsigned long AWAKE_AUTO_REFRESH_MS = 5UL * 60UL * 1000UL;
 constexpr unsigned long PAIRING_POLL_INTERVAL_MS = 5000UL;
+constexpr unsigned long STAGE_SUCCESS_HOLD_MS = 2500UL;
+constexpr unsigned long INITIAL_FAST_REFRESH_INTERVAL_MS = 15000UL;
+constexpr unsigned long INITIAL_FAST_REFRESH_WINDOW_MS = 2UL * 60UL * 1000UL;
 constexpr const char *kBinaryCachePath = "/current.bin";
-constexpr const char *kWifiSetupTitle = "Connect this frame to WiFi";
-constexpr const char *kPairingSetupTitle = "Add this frame to your account";
+constexpr const char *kWifiSetupTitle = "Connect to WiFi";
+constexpr const char *kWifiConnectedTitle = "Connected to WiFi";
+constexpr const char *kPairingSetupTitle = "Connect to your account";
+constexpr const char *kPairingConnectedTitle = "Frame ready";
 
 enum SetupStage : uint8_t {
   SETUP_STAGE_WIFI = 0,
-  SETUP_STAGE_PAIRING = 1,
-  SETUP_STAGE_READY = 2,
+  SETUP_STAGE_WIFI_CONNECTED = 1,
+  SETUP_STAGE_PAIRING = 2,
+  SETUP_STAGE_ACCOUNT_CONNECTED = 3,
+  SETUP_STAGE_READY = 4,
 };
 
 String generatePairingToken() {
@@ -125,16 +132,33 @@ void showWiFiSetupScreen() {
   const String portalUrl = "http://192.168.4.1/";
   const String qrPayload = ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
   ConfigurationScreen setupScreen(display, qrPayload, kWifiSetupTitle,
-                                  "Open local setup portal");
+                                  "Scan to join your frame setup");
   setupScreen.render();
-  Serial.printf("[Setup Stage] WiFi setup QR shown (portal=%s)\n", portalUrl.c_str());
+  Serial.printf("[Setup Stage] Welcome + WiFi setup QR shown (portal=%s)\n",
+                portalUrl.c_str());
+}
+
+void showWiFiConnectedScreen() {
+  auto successScreen = ConfigurationScreen::createStatusScreen(
+      display, kWifiConnectedTitle, "Your frame is online.",
+      "Great! Next, link your account.");
+  successScreen.render();
+  Serial.println("[Setup Stage] WiFi success screen shown");
+}
+
+void showAccountConnectedScreen() {
+  auto successScreen = ConfigurationScreen::createStatusScreen(
+      display, kPairingConnectedTitle, "Account connection complete.",
+      "Your photo will appear in a moment.");
+  successScreen.render();
+  Serial.println("[Setup Stage] Account linked success screen shown");
 }
 
 void showPairingSetupScreen() {
   const String pairingUrl = getPairingPageUrl();
   const String qrPayload = ConfigurationScreen::buildPairingQrPayload(pairingUrl);
   ConfigurationScreen setupScreen(display, qrPayload, kPairingSetupTitle,
-                                  "Link this frame with your account");
+                                  "Scan to link this frame");
   setupScreen.render();
   Serial.printf("[Setup Stage] Pairing QR shown (url=%s)\n", pairingUrl.c_str());
 }
@@ -144,8 +168,14 @@ void showSetupStageScreen(SetupStage stage) {
   case SETUP_STAGE_WIFI:
     showWiFiSetupScreen();
     break;
+  case SETUP_STAGE_WIFI_CONNECTED:
+    showWiFiConnectedScreen();
+    break;
   case SETUP_STAGE_PAIRING:
     showPairingSetupScreen();
+    break;
+  case SETUP_STAGE_ACCOUNT_CONNECTED:
+    showAccountConnectedScreen();
     break;
   case SETUP_STAGE_READY:
   default:
@@ -275,16 +305,23 @@ void runWebServer(bool useAP) {
   const unsigned long timeoutMs = alwaysAwake ? 0UL : 10UL * 60UL * 1000UL;
   unsigned long start = millis();
   unsigned long lastAutoRefresh = millis();
+  unsigned long lastFastRefresh = 0;
+  const unsigned long fastRefreshWindowStart = millis();
   unsigned long lastPairingPoll = 0;
-  SetupStage displayedStage = SETUP_STAGE_READY;
+  unsigned long stageRenderedAt = 0;
+  SetupStage displayedStage = getCurrentSetupStage();
+  SetupStage stagedTarget = displayedStage;
 
-  if (getCurrentSetupStage() != SETUP_STAGE_READY) {
-    displayedStage = getCurrentSetupStage();
+  if (displayedStage != SETUP_STAGE_READY) {
     showSetupStageScreen(displayedStage);
+    stageRenderedAt = millis();
   }
+  server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
+  server.setAccountLinkedStatus(appConfig->hasAssignedDeviceId());
 
   while (true) {
     server.handleRequests();
+    server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
 
     if (server.isRefreshRequested()) {
       server.clearRefreshRequest();
@@ -320,19 +357,55 @@ void runWebServer(bool useAP) {
         appConfig->assignedDeviceId[sizeof(appConfig->assignedDeviceId) - 1] = '\0';
         if (configStorage.save(*appConfig)) {
           printf("Pairing complete. Assigned deviceId='%s'\n", appConfig->assignedDeviceId);
+          server.setAccountLinkedStatus(true);
         }
       }
     }
 
-    const SetupStage currentStage = getCurrentSetupStage();
-    if (currentStage != displayedStage) {
-      displayedStage = currentStage;
-      if (currentStage != SETUP_STAGE_READY) {
-        showSetupStageScreen(currentStage);
+    const SetupStage derivedStage = getCurrentSetupStage();
+    if (displayedStage == SETUP_STAGE_WIFI &&
+        derivedStage == SETUP_STAGE_PAIRING) {
+      displayedStage = SETUP_STAGE_WIFI_CONNECTED;
+      stagedTarget = SETUP_STAGE_PAIRING;
+      showSetupStageScreen(displayedStage);
+      stageRenderedAt = millis();
+    } else if (displayedStage == SETUP_STAGE_PAIRING &&
+               derivedStage == SETUP_STAGE_READY) {
+      displayedStage = SETUP_STAGE_ACCOUNT_CONNECTED;
+      stagedTarget = SETUP_STAGE_READY;
+      showSetupStageScreen(displayedStage);
+      stageRenderedAt = millis();
+    } else if (derivedStage != SETUP_STAGE_READY && derivedStage != displayedStage &&
+               displayedStage != SETUP_STAGE_WIFI_CONNECTED &&
+               displayedStage != SETUP_STAGE_ACCOUNT_CONNECTED) {
+      displayedStage = derivedStage;
+      stagedTarget = derivedStage;
+      showSetupStageScreen(displayedStage);
+      stageRenderedAt = millis();
+    }
+
+    if ((displayedStage == SETUP_STAGE_WIFI_CONNECTED ||
+         displayedStage == SETUP_STAGE_ACCOUNT_CONNECTED) &&
+        millis() - stageRenderedAt >= STAGE_SUCCESS_HOLD_MS) {
+      displayedStage = stagedTarget;
+      if (displayedStage != SETUP_STAGE_READY) {
+        showSetupStageScreen(displayedStage);
+        stageRenderedAt = millis();
       } else {
         Serial.println("[Setup Stage] Setup complete. Entering normal operation.");
         refreshDisplay(true);
       }
+    }
+
+    const bool withinFastRefreshWindow =
+        millis() - fastRefreshWindowStart <= INITIAL_FAST_REFRESH_WINDOW_MS;
+    if (appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED &&
+        withinFastRefreshWindow &&
+        (lastFastRefresh == 0 ||
+         millis() - lastFastRefresh >= INITIAL_FAST_REFRESH_INTERVAL_MS)) {
+      Serial.println("Initial fast refresh check.");
+      refreshDisplay(lastFastRefresh == 0);
+      lastFastRefresh = millis();
     }
 
     if (!alwaysAwake && timeoutMs > 0 && millis() - start >= timeoutMs) {
@@ -382,7 +455,7 @@ void setup() {
   const SetupStage setupStage = getCurrentSetupStage();
   if (setupStage == SETUP_STAGE_READY) {
     Serial.println("[Setup Stage] WiFi + pairing complete. Starting normal operation.");
-    refreshDisplay();
+    refreshDisplay(true);
   } else {
     Serial.printf("[Setup Stage] Waiting for setup stage=%u\n", setupStage);
     showSetupStageScreen(setupStage);

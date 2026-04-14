@@ -126,6 +126,25 @@ void ConfigurationServer::setupWebServer() {
                request->send(200, "application/json",
                              "{\"ok\":true,\"restarting\":true}");
              });
+  server->on("/api/setup-status", HTTP_GET,
+             [this](AsyncWebServerRequest *request) {
+               JsonDocument doc;
+               doc["ok"] = true;
+               doc["wifiConnected"] = wifiConnected;
+               doc["accountLinked"] = accountLinked;
+               String stage = "setup-needed";
+               if (wifiConnected && accountLinked) {
+                 stage = "frame-ready";
+               } else if (wifiConnected) {
+                 stage = "ready-to-link-account";
+               } else if (currentConfiguration.ssid.length() > 0) {
+                 stage = "waiting-for-wifi";
+               }
+               doc["stage"] = stage;
+               String payload;
+               serializeJson(doc, payload);
+               request->send(200, "application/json", payload);
+             });
 
   server->onNotFound(
       [this](AsyncWebServerRequest *request) { handleNotFound(request); });
@@ -139,7 +158,7 @@ void ConfigurationServer::handleRoot(AsyncWebServerRequest *request) {
 
 void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
   if (request->hasParam("ssid", true) && request->hasParam("password", true)) {
-    Configuration config;
+    Configuration config = currentConfiguration;
     config.ssid = request->getParam("ssid", true)->value();
     config.password = request->getParam("password", true)->value();
     if (request->hasParam("powerMode", true)) {
@@ -180,6 +199,8 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     if (wifiConnected) {
       doc["stationIp"] = stationIp;
     }
+    this->wifiConnected = wifiConnected;
+    this->accountLinked = false;
 
     String payload;
     serializeJson(doc, payload);
@@ -220,6 +241,10 @@ String ConfigurationServer::getConfigurationPage() {
   html.replace("{{PAIRING_URL}}",
                currentConfiguration.pairingPageBaseUrl + "?token=" +
                    currentConfiguration.pairingToken);
+  html.replace("{{STATUS_BADGE}}",
+               accountLinked ? "Frame ready"
+                             : (wifiConnected ? "Ready to connect account"
+                                              : "Setup needed"));
   setSelected(html, "{{POWER_SEL_SLEEP}}", currentConfiguration.powerMode == 0);
   setSelected(html, "{{POWER_SEL_AWAKE}}", currentConfiguration.powerMode == 1);
   return html;
@@ -234,3 +259,11 @@ String ConfigurationServer::getWifiAccessPointPassword() const {
 }
 
 bool ConfigurationServer::isRunning() const { return isServerRunning; }
+
+void ConfigurationServer::setWifiConnectionStatus(bool connected) {
+  wifiConnected = connected;
+}
+
+void ConfigurationServer::setAccountLinkedStatus(bool linked) {
+  accountLinked = linked;
+}
