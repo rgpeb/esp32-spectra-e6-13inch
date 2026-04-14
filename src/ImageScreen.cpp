@@ -146,7 +146,9 @@ bool ImageScreen::isUpdateNeeded(const StatusMetadata &status) const {
     return false;
   }
   if (forceFreshFetch) {
-    Serial.println("Update check: forced fresh fetch enabled (still comparing version/etag).");
+    Serial.println(
+        "Update check: forced fresh fetch enabled, downloading latest binary now.");
+    return true;
   }
 
   const String storedVersion = String(config.lastStatusVersion);

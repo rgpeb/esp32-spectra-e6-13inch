@@ -26,6 +26,7 @@ constexpr unsigned long INITIAL_FAST_REFRESH_INTERVAL_MS = 10000UL;
 constexpr unsigned long INITIAL_FAST_REFRESH_WINDOW_MS = 90UL * 1000UL;
 constexpr unsigned long INITIAL_PROMPT_REFRESH_DELAY_MS = 1500UL;
 constexpr const char *kBinaryCachePath = "/current.bin";
+constexpr const char *kPairingUnlinkPath = "/pairing/unlink";
 enum SetupUiState : uint8_t {
   SETUP_STATE_WELCOME_JOIN_WIFI = 0,
   SETUP_STATE_CONNECT_HOME_WIFI = 1,
@@ -56,11 +57,11 @@ String getPairingPageUrl() {
 }
 
 SetupUiState getCurrentSetupStage(bool hasShownWifiSuccess, bool hasShownAccountSuccess,
-                                  bool hasDisplayedFirstImage) {
+                                  bool hasDisplayedFirstImage,
+                                  bool hasSeenSetupClient) {
   if (WiFi.status() != WL_CONNECTED) {
-    const bool hasSetupClient = WiFi.softAPgetStationNum() > 0;
-    return hasSetupClient ? SETUP_STATE_CONNECT_HOME_WIFI
-                          : SETUP_STATE_WELCOME_JOIN_WIFI;
+    return hasSeenSetupClient ? SETUP_STATE_CONNECT_HOME_WIFI
+                              : SETUP_STATE_WELCOME_JOIN_WIFI;
   }
   if (hasShownWifiSuccess && !appConfig->hasAssignedDeviceId()) {
     return SETUP_STATE_WIFI_CONNECTED;
@@ -142,8 +143,8 @@ void showWelcomeJoinWifiScreen() {
   const String qrPayload = ConfigurationScreen::buildJoinWifiQrPayload(
       ConfigurationServer::WIFI_AP_NAME, ConfigurationServer::WIFI_AP_PASSWORD);
   ConfigurationScreen setupScreen(
-      display, qrPayload, "Connect to WiFi",
-      "Join your frame setup network");
+      display, qrPayload, "Join frame WiFi",
+      "On your phone, join the frame setup network.");
   setupScreen.render();
   Serial.println("[Setup Stage] Welcome + join frame WiFi shown");
 }
@@ -152,7 +153,7 @@ void showConnectHomeWifiScreen() {
   const String portalUrl = "http://192.168.4.1/";
   const String qrPayload = ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
   ConfigurationScreen setupScreen(display, qrPayload, "Connect this frame",
-                                  "Open setup and enter home WiFi");
+                                  "Open setup, then enter your home WiFi.");
   setupScreen.render();
   Serial.printf("[Setup Stage] Home WiFi portal step shown (portal=%s)\n",
                 portalUrl.c_str());
@@ -160,8 +161,8 @@ void showConnectHomeWifiScreen() {
 
 void showWiFiConnectedScreen() {
   auto successScreen = ConfigurationScreen::createStatusScreen(
-      display, "Connected", "Your frame is online.",
-      "Great. Next, connect your account.");
+      display, "WiFi connected", "Your frame is online.",
+      "Great! Next, connect your account.");
   successScreen.render();
   Serial.println("[Setup Stage] WiFi success screen shown");
 }
@@ -178,7 +179,7 @@ void showPairingSetupScreen() {
   const String pairingUrl = getPairingPageUrl();
   const String qrPayload = ConfigurationScreen::buildPairingQrPayload(pairingUrl);
   ConfigurationScreen setupScreen(display, qrPayload, "Connect to your account",
-                                  "Scan to finish setup");
+                                  "Scan this QR to finish setup.");
   setupScreen.render();
   Serial.printf("[Setup Stage] Pairing QR shown (url=%s)\n", pairingUrl.c_str());
 }
@@ -230,6 +231,46 @@ void clearCachedBinaryState() {
   LittleFS.end();
 }
 
+bool notifyServerBeforeReset() {
+  if (!appConfig || WiFi.status() != WL_CONNECTED) {
+    Serial.println("Reset unlink notify skipped: WiFi not connected.");
+    return false;
+  }
+  if (!appConfig->hasPairingToken() && !appConfig->hasAssignedDeviceId()) {
+    Serial.println("Reset unlink notify skipped: no pairing token or assigned deviceId.");
+    return false;
+  }
+
+  const String url = String(DEVICE_SERVER_BASE_URL) + kPairingUnlinkPath;
+  std::unique_ptr<WiFiClient> client;
+  if (url.startsWith("https://")) {
+    auto secureClient = new WiFiClientSecure;
+    secureClient->setInsecure();
+    client.reset(secureClient);
+  } else {
+    client.reset(new WiFiClient);
+  }
+
+  HTTPClient http;
+  http.begin(*client, url);
+  http.setTimeout(10000);
+  http.addHeader("Content-Type", "application/json");
+  attachLocalPortalHeaders(http);
+
+  JsonDocument payload;
+  payload["token"] = String(appConfig->pairingToken);
+  payload["deviceId"] = String(appConfig->assignedDeviceId);
+  String body;
+  serializeJson(payload, body);
+
+  const int status = http.POST(body);
+  http.end();
+  const bool ok = (status >= 200 && status < 300);
+  Serial.printf("Reset unlink notify %s (HTTP %d, url=%s)\n",
+                ok ? "succeeded" : "failed", status, url.c_str());
+  return ok;
+}
+
 void processResetAction(ResetAction resetAction) {
   if (resetAction == RESET_ACTION_NONE) {
     return;
@@ -244,6 +285,8 @@ void processResetAction(ResetAction resetAction) {
   Serial.println("WiFi credentials cleared");
 
   if (isFactoryReset) {
+    notifyServerBeforeReset();
+
     memset(appConfig->assignedDeviceId, 0, sizeof(appConfig->assignedDeviceId));
     Serial.println("deviceId cleared");
 
@@ -269,8 +312,6 @@ void processResetAction(ResetAction resetAction) {
     display.display(false);
     display.hibernate();
     Serial.println("Display cleared");
-
-    showWelcomeJoinWifiScreen();
   }
 
   delay(300);
@@ -349,12 +390,16 @@ void runWebServer(bool useAP) {
   bool ranInitialPromptRefresh = false;
   unsigned long initialPromptAt = millis();
   SetupUiState lastRenderedSetupState = SETUP_STATE_READY;
+  bool hasSeenSetupClient = false;
   server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
   server.setAccountLinkedStatus(appConfig->hasAssignedDeviceId());
 
   while (true) {
     server.handleRequests();
     server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
+    if (WiFi.softAPgetStationNum() > 0) {
+      hasSeenSetupClient = true;
+    }
 
     if (server.isRefreshRequested()) {
       server.clearRefreshRequest();
@@ -394,6 +439,7 @@ void runWebServer(bool useAP) {
           accountSuccessPending = true;
           initialPromptAt = millis();
           ranInitialPromptRefresh = false;
+          firstImageShown = refreshDisplay(true) || firstImageShown;
         }
       }
     }
@@ -416,7 +462,7 @@ void runWebServer(bool useAP) {
     } else {
       const SetupUiState derivedStage =
           getCurrentSetupStage(wifiSuccessPending, accountSuccessPending,
-                               firstImageShown);
+                               firstImageShown, hasSeenSetupClient);
       if (derivedStage != SETUP_STATE_READY &&
           derivedStage != lastRenderedSetupState) {
         showSetupStageScreen(derivedStage);
