@@ -5,6 +5,7 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <WiFiAP.h>
+#include <time.h>
 
 const char *ConfigurationServer::WIFI_AP_NAME = "Framey-Config";
 const char *ConfigurationServer::WIFI_AP_PASSWORD = "configure123";
@@ -13,7 +14,7 @@ ConfigurationServer::ConfigurationServer(const Configuration &currentConfig)
     : deviceName("E-Ink-Display"), wifiAccessPointName(WIFI_AP_NAME),
       wifiAccessPointPassword(WIFI_AP_PASSWORD),
       currentConfiguration(currentConfig), server(nullptr), dnsServer(nullptr),
-      isServerRunning(false) {}
+      isServerRunning(false), frameName("E-Ink-Display") {}
 
 void ConfigurationServer::run(OnSaveCallback onSaveCallback, bool startAP) {
   this->onSaveCallback = onSaveCallback;
@@ -132,6 +133,14 @@ void ConfigurationServer::setupWebServer() {
                doc["ok"] = true;
                doc["wifiConnected"] = wifiConnected;
                doc["accountLinked"] = accountLinked;
+               doc["frameName"] = frameName;
+               doc["deviceId"] = deviceId;
+               doc["lastAppliedVersion"] = lastAppliedVersion;
+               doc["lastAppliedImageId"] = lastAppliedImageId;
+               doc["lastAppliedPhotoName"] = lastAppliedPhotoName;
+               doc["lastSyncEpoch"] = lastSyncEpoch;
+               doc["statusFetchSucceeded"] = lastStatusFetchSucceeded;
+               doc["updatePending"] = isUpdatePending;
                String stage = "welcome";
                if (wifiConnected && accountLinked) {
                  stage = "frame-ready";
@@ -141,6 +150,22 @@ void ConfigurationServer::setupWebServer() {
                  stage = "connect-home-wifi";
                }
                doc["stage"] = stage;
+               String frameStatus = "Not connected";
+               const bool hasRecentEpochSync =
+                   lastSyncEpoch > 0 &&
+                   (static_cast<uint32_t>(time(nullptr)) - lastSyncEpoch) <=
+                       10UL * 60UL;
+               const bool hasRecentRuntimeSync =
+                   lastSyncMillis > 0 && (millis() - lastSyncMillis) <= 10UL * 60UL * 1000UL;
+               const bool hasRecentSync = hasRecentEpochSync || hasRecentRuntimeSync;
+               if (wifiConnected && accountLinked && hasRecentSync &&
+                   !isUpdatePending && lastStatusFetchSucceeded) {
+                 frameStatus = "Up to date";
+               } else if (wifiConnected && accountLinked &&
+                          lastStatusFetchSucceeded && isUpdatePending) {
+                 frameStatus = "Waiting for update";
+               }
+               doc["frameStatus"] = frameStatus;
                String payload;
                serializeJson(doc, payload);
                request->send(200, "application/json", payload);
@@ -267,4 +292,21 @@ void ConfigurationServer::setWifiConnectionStatus(bool connected) {
 
 void ConfigurationServer::setAccountLinkedStatus(bool linked) {
   accountLinked = linked;
+}
+
+void ConfigurationServer::setDeviceStatusSnapshot(
+    const ApplicationConfig &configSnapshot, bool statusFetchSucceeded,
+    bool updatePending, unsigned long lastSuccessfulSyncMs) {
+  lastAppliedVersion = String(configSnapshot.lastAppliedVersion);
+  lastAppliedImageId = String(configSnapshot.lastAppliedImageId);
+  lastAppliedPhotoName = String(configSnapshot.lastAppliedPhotoName);
+  lastSyncEpoch = configSnapshot.lastSyncEpoch;
+  lastSyncMillis = lastSuccessfulSyncMs;
+  deviceId = String(configSnapshot.assignedDeviceId);
+  lastStatusFetchSucceeded = statusFetchSucceeded;
+  isUpdatePending = updatePending;
+  frameName = WiFi.getHostname();
+  if (frameName.length() == 0) {
+    frameName = deviceName;
+  }
 }

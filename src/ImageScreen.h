@@ -22,8 +22,20 @@ private:
     String version;
     String etag;
     String assetUrl;
+    String imageId;
+    String photoName;
     int httpCode = -1;
   };
+
+public:
+  struct RefreshResult {
+    bool rendered = false;
+    bool statusFetchSucceeded = false;
+    bool updatePending = false;
+    String serverVersion;
+  };
+
+private:
 
   String getStatusUrl() const;
   String getBinaryUrl() const;
@@ -33,11 +45,13 @@ private:
                                 const String &ifNoneMatch = "");
   bool renderBinaryFromLittleFS();
   void persistStatusMetadata(const StatusMetadata &status);
+  void persistAppliedState(const StatusMetadata &status);
 
 public:
   ImageScreen(DisplayType &display, ApplicationConfig &config,
               ApplicationConfigStorage &configStorage,
               bool forceFreshFetch = false);
+  RefreshResult refresh();
   bool renderAndReport();
   void render() override;
   int nextRefreshInSeconds() override;
