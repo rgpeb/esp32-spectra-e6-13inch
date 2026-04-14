@@ -3,51 +3,117 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Photo Frame Local Portal</title>
+  <title>Frame Setup Portal</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 16px; }
-    h1 { font-size: 1.3rem; }
-    label { display: block; margin: 12px 0 6px; font-weight: 600; }
-    input, select, button { width: 100%; padding: 10px; margin-bottom: 8px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
-    .status { min-height: 20px; font-size: 0.9rem; }
+    :root {
+      --bg: #eef3ef;
+      --panel: #f7faf7;
+      --ink: #13392f;
+      --muted: #547266;
+      --line: #b8cec0;
+      --accent: #1f6f4a;
+      --accent-soft: #d7e8dd;
+      --error: #9d2f2f;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--bg);
+      color: var(--ink);
+      padding: 20px 14px 36px;
+      line-height: 1.35;
+    }
+    h1 { margin: 0 0 8px; font-size: 2rem; }
+    h2 { margin: 0 0 8px; font-size: 1.25rem; }
+    p { margin: 0 0 10px; color: var(--muted); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 7px 13px;
+      background: var(--accent-soft);
+      color: var(--ink);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    label { display: block; margin: 12px 0 6px; font-weight: 700; }
+    input, select, button {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 12px;
+      box-sizing: border-box;
+      font-size: 1rem;
+      background: #fff;
+      color: var(--ink);
+    }
+    button {
+      margin-top: 10px;
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 700;
+    }
+    button.secondary { background: #fff; color: var(--ink); }
+    button.danger { background: #fff; color: var(--error); border-color: #e0bbbb; }
+    .status { min-height: 24px; margin-top: 10px; font-weight: 700; }
+    .grid { display: grid; gap: 12px; }
   </style>
 </head>
 <body>
-  <h1>E-Ink Photo Frame Local Portal</h1>
+  <h1>Welcome</h1>
+  <p>Use this local portal to connect your frame and finish onboarding.</p>
+
+  <div class="card">
+    <span id="stageBadge" class="pill">{{STATUS_BADGE}}</span>
+    <h2>Setup status</h2>
+    <p id="stageText">Checking frame status…</p>
+  </div>
 
   <form id="configForm" class="card">
-    <label for="ssid">WiFi SSID</label>
+    <h2>Connect to WiFi</h2>
+    <p>Enter your home WiFi details to bring the frame online.</p>
+
+    <label for="ssid">WiFi name</label>
     <input id="ssid" name="ssid" type="text" value="{{CURRENT_SSID}}" required />
 
-    <label for="password">WiFi Password</label>
+    <label for="password">WiFi password</label>
     <input id="password" name="password" type="password" value="{{CURRENT_PASSWORD}}" required />
 
-    <label for="powerMode">Power Mode</label>
+    <label for="powerMode">Power mode</label>
     <select id="powerMode" name="powerMode">
-      <option value="0" {{POWER_SEL_SLEEP}}>Normal Sleep</option>
-      <option value="1" {{POWER_SEL_AWAKE}}>Always Awake</option>
+      <option value="0" {{POWER_SEL_SLEEP}}>Normal sleep</option>
+      <option value="1" {{POWER_SEL_AWAKE}}>Always awake</option>
     </select>
 
-    <button type="submit">Save WiFi Settings</button>
+    <button type="submit">Save and connect</button>
   </form>
 
   <div class="card">
-    <button id="refreshNowButton" type="button">Refresh Now</button>
-    <small>Checks <code>status.json</code>, downloads <code>current.bin</code> if changed, and redraws immediately.</small>
+    <h2>Connect to your account</h2>
+    <p>After WiFi is connected, scan this link on your phone:</p>
+    <p><a id="pairingLink" href="{{PAIRING_URL}}">{{PAIRING_URL}}</a></p>
   </div>
 
-  <div class="card">
-    <button id="forgetWifiButton" type="button">Forget WiFi</button>
-    <small>Clears saved WiFi credentials only. Keeps pairing/device identity and reboots into WiFi setup mode.</small>
-    <button id="factoryResetButton" type="button">Factory Reset / Reset Frame Setup</button>
-    <small>Clears WiFi credentials, pairing/device identity, version/ETag, and cached image state. Reboots to first-boot QR setup.</small>
+  <div class="card grid">
+    <button id="refreshNowButton" type="button">Refresh Now</button>
+    <button id="forgetWifiButton" type="button" class="secondary">Forget WiFi</button>
+    <button id="factoryResetButton" type="button" class="danger">Factory Reset / Reset Frame Setup</button>
   </div>
 
   <div id="status" class="status"></div>
 
   <script>
     const statusEl = document.getElementById('status');
+    const stageBadge = document.getElementById('stageBadge');
+    const stageText = document.getElementById('stageText');
     const form = document.getElementById('configForm');
     const refreshNowButton = document.getElementById('refreshNowButton');
     const forgetWifiButton = document.getElementById('forgetWifiButton');
@@ -55,7 +121,30 @@
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
-      statusEl.style.color = isError ? '#c00' : '#060';
+      statusEl.style.color = isError ? '#9d2f2f' : '#1f6f4a';
+    }
+
+    function paintStage(stage) {
+      const map = {
+        'setup-needed': ['Setup needed', 'Connect to WiFi to begin setup.'],
+        'waiting-for-wifi': ['Setup needed', 'Saved details. Waiting for WiFi connection…'],
+        'ready-to-link-account': ['Connected to WiFi', 'WiFi is connected. Next step: connect to your account.'],
+        'frame-ready': ['Frame ready', 'Your frame is connected and ready to display photos.']
+      };
+      const [badge, text] = map[stage] || map['setup-needed'];
+      stageBadge.textContent = badge;
+      stageText.textContent = text;
+    }
+
+    async function refreshSetupStatus() {
+      try {
+        const res = await fetch('/api/setup-status');
+        if (!res.ok) throw new Error('status failed');
+        const data = await res.json();
+        paintStage(data?.stage);
+      } catch (_) {
+        stageText.textContent = 'Unable to fetch setup status right now.';
+      }
     }
 
     async function requestReset(action, pendingMessage, successMessage) {
@@ -67,62 +156,55 @@
         if (!res.ok) throw new Error('reset failed');
         setStatus(successMessage);
       } catch (_) {
-        setStatus('Failed to reset setup.', true);
+        setStatus('Could not reset frame setup.', true);
       }
     }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      setStatus('Saving WiFi settings...');
+      setStatus('Connecting to WiFi…');
       const body = new URLSearchParams(new FormData(form));
       try {
         const res = await fetch('/save', { method: 'POST', body });
         if (!res.ok) throw new Error('save failed');
         const data = await res.json();
         if (data?.wifiConnected) {
-          setStatus('WiFi connected and settings saved.');
+          setStatus('Connected to WiFi. Next: connect to your account.');
+          paintStage('ready-to-link-account');
         } else {
-          setStatus('Saved. Frame will use these credentials on next connection attempt.');
+          setStatus('Saved. The frame will keep trying to join WiFi.');
+          paintStage('waiting-for-wifi');
         }
       } catch (_) {
-        setStatus('Failed to save settings.', true);
+        setStatus('Could not save WiFi settings.', true);
       }
     });
 
     refreshNowButton.addEventListener('click', async () => {
-      setStatus('Refreshing display now...');
+      setStatus('Requesting refresh…');
       try {
         const res = await fetch('/api/refresh-display', { method: 'POST' });
         if (!res.ok) throw new Error('refresh failed');
-        setStatus('Refresh requested. The frame will check status and redraw if needed.');
+        setStatus('Refresh requested. The frame will check for the latest photo now.');
       } catch (_) {
-        setStatus('Failed to request refresh.', true);
+        setStatus('Could not request refresh.', true);
       }
     });
 
     forgetWifiButton.addEventListener('click', async () => {
-      const confirmed = window.confirm(
-        'Forget WiFi credentials only? Pairing/device identity will be kept. The frame will reboot into WiFi setup mode.'
-      );
+      const confirmed = window.confirm('Forget WiFi and return to WiFi setup?');
       if (!confirmed) return;
-      await requestReset(
-        'wifi',
-        'Clearing WiFi credentials and rebooting...',
-        'Forget WiFi requested. Rebooting into WiFi setup mode...'
-      );
+      await requestReset('wifi', 'Forgetting WiFi and restarting…', 'WiFi removed. Restarting setup…');
     });
 
     factoryResetButton.addEventListener('click', async () => {
-      const confirmed = window.confirm(
-        'Factory Reset frame setup? This clears WiFi, pairing/device identity, and cache, then reboots to first-boot QR setup.'
-      );
+      const confirmed = window.confirm('Factory reset frame setup? This clears WiFi and account linking.');
       if (!confirmed) return;
-      await requestReset(
-        'factory',
-        'Factory reset in progress and rebooting...',
-        'Factory reset requested. Rebooting into initial QR + setup flow...'
-      );
+      await requestReset('factory', 'Factory reset in progress…', 'Factory reset requested. Restarting setup…');
     });
+
+    refreshSetupStatus();
+    setInterval(refreshSetupStatus, 5000);
   </script>
 </body>
 </html>
