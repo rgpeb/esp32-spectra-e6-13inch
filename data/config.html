@@ -47,6 +47,13 @@
     .steps { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
     .steps li { margin: 6px 0; }
     .steps li.active { color: var(--ink); font-weight: 700; }
+    .steps li.done { color: var(--ok); font-weight: 700; }
+    .steps li.current {
+      color: var(--ink);
+      font-weight: 700;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
     label { display: block; margin: 12px 0 6px; font-weight: 700; }
     input, select, button {
       width: 100%;
@@ -65,11 +72,31 @@
       color: #fff;
       font-weight: 700;
     }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
     button.secondary { background: #fff; color: var(--ink); }
     button.danger { background: #fff; color: var(--error); border-color: #e0bbbb; }
     .status { min-height: 24px; margin-top: 10px; font-weight: 700; }
     .grid { display: grid; gap: 12px; }
     .small { font-size: 0.95rem; }
+    .action-card {
+      border-width: 2px;
+      border-color: var(--accent);
+      background: #f4fbf6;
+    }
+    .action-card h2 { margin-bottom: 6px; }
+    .primary-action {
+      padding: 16px;
+      font-size: 1.05rem;
+    }
+    .check {
+      display: inline-block;
+      margin-left: 8px;
+      color: var(--ok);
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -91,7 +118,7 @@
 
   <form id="configForm" class="card">
     <h2>Connect this frame to the internet</h2>
-    <p>Enter your home WiFi details in this setup page.</p>
+    <p>Step 1 of 2: Enter your home WiFi details in this setup page.</p>
 
     <label for="ssid">WiFi name</label>
     <input id="ssid" name="ssid" type="text" value="{{CURRENT_SSID}}" required />
@@ -108,10 +135,11 @@
     <button type="submit">Save and connect</button>
   </form>
 
-  <div class="card">
-    <h2>Connect your account</h2>
-    <p>After WiFi is connected, open this link on your phone to finish setup:</p>
-    <p class="small"><a id="pairingLink" href="{{PAIRING_URL}}">{{PAIRING_URL}}</a></p>
+  <div id="accountCard" class="card action-card">
+    <h2>Step 2 of 2: Connect frame to account</h2>
+    <p id="accountCardText">Finish WiFi first, then connect this frame to your account.</p>
+    <button id="connectAccountButton" type="button" class="primary-action" disabled>Connect to Account</button>
+    <p class="small">Link URL: <a id="pairingLink" href="{{PAIRING_URL}}">{{PAIRING_URL}}</a></p>
   </div>
 
   <div class="card grid">
@@ -131,6 +159,9 @@
     const forgetWifiButton = document.getElementById('forgetWifiButton');
     const factoryResetButton = document.getElementById('factoryResetButton');
     const stepsEl = document.getElementById('steps');
+    const accountCardText = document.getElementById('accountCardText');
+    const connectAccountButton = document.getElementById('connectAccountButton');
+    const pairingLink = document.getElementById('pairingLink');
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
@@ -142,21 +173,36 @@
       const activeIndex = progressOrder.indexOf(activeKey);
       stepsEl.querySelectorAll('li').forEach((li, index) => {
         li.classList.toggle('active', index <= activeIndex);
+        li.classList.toggle('done', index < activeIndex);
+        li.classList.toggle('current', index === activeIndex);
       });
+    }
+
+    function updateAccountAction(stage) {
+      const canConnect = stage === 'wifi-connected' || stage === 'connect-account' || stage === 'frame-ready';
+      connectAccountButton.disabled = !canConnect;
+      if (stage === 'frame-ready') {
+        accountCardText.textContent = 'Account connected. Setup complete.';
+      } else if (canConnect) {
+        accountCardText.textContent = 'WiFi is complete. Next required step: connect this frame to your account.';
+      } else {
+        accountCardText.textContent = 'Finish WiFi first, then connect this frame to your account.';
+      }
     }
 
     function paintStage(stage) {
       const map = {
         'welcome': ['Welcome', 'Join the frame WiFi on your phone to begin setup.', 'welcome'],
         'connect-home-wifi': ['Connect home WiFi', 'Open this page and enter your home WiFi details.', 'connect-home-wifi'],
-        'wifi-connected': ['Connected to WiFi', 'Great. Next: connect your account.', 'wifi-connected'],
-        'connect-account': ['Connect account', 'Scan the account QR on your frame to finish setup.', 'connect-account'],
+        'wifi-connected': ['Connected to WiFi', 'WiFi complete. Next required step: connect this frame to your account.', 'connect-account'],
+        'connect-account': ['Connected to WiFi', 'Next required step: connect this frame to your account.', 'connect-account'],
         'frame-ready': ['Frame ready', 'Your frame is connected. Browse the library and choose a photo.', 'frame-ready']
       };
       const [badge, text, step] = map[stage] || map['welcome'];
       stageBadge.textContent = badge;
       stageText.textContent = text;
       markSteps(step);
+      updateAccountAction(stage);
     }
 
     async function refreshSetupStatus() {
@@ -192,8 +238,12 @@
         if (!res.ok) throw new Error('save failed');
         const data = await res.json();
         if (data?.wifiConnected) {
-          setStatus('Connected to WiFi. Next: connect your account.');
-          paintStage('wifi-connected');
+          setStatus('Connected to WiFi. Next required step: connect this frame to your account.');
+          paintStage('connect-account');
+          if (data?.pairingUrl) {
+            pairingLink.href = data.pairingUrl;
+            pairingLink.textContent = data.pairingUrl;
+          }
         } else {
           setStatus('Saved. Keep this page open while the frame joins WiFi.');
           paintStage('connect-home-wifi');
@@ -201,6 +251,10 @@
       } catch (_) {
         setStatus('Could not save WiFi settings.', true);
       }
+    });
+
+    connectAccountButton.addEventListener('click', () => {
+      window.location.href = pairingLink.href;
     });
 
     refreshNowButton.addEventListener('click', async () => {
