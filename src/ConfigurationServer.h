@@ -9,6 +9,8 @@
 
 #include <functional>
 
+#include "ApplicationConfig.h"
+
 struct Configuration {
   String ssid;
   String password;
@@ -55,6 +57,10 @@ public:
   void clearResetActionRequest() { resetActionRequested = RESET_ACTION_NONE; }
   void setWifiConnectionStatus(bool connected);
   void setAccountLinkedStatus(bool linked);
+  void setDeviceStatusSnapshot(const ApplicationConfig &configSnapshot,
+                               bool statusFetchSucceeded,
+                               bool updatePending,
+                               unsigned long lastSuccessfulSyncMs);
 
 private:
   String deviceName;
@@ -70,6 +76,15 @@ private:
   ResetAction resetActionRequested = RESET_ACTION_NONE;
   bool wifiConnected = false;
   bool accountLinked = false;
+  bool lastStatusFetchSucceeded = false;
+  bool isUpdatePending = false;
+  String lastAppliedVersion;
+  String lastAppliedImageId;
+  String lastAppliedPhotoName;
+  uint32_t lastSyncEpoch = 0;
+  unsigned long lastSyncMillis = 0;
+  String frameName;
+  String deviceId;
 
   String htmlTemplate;
   OnSaveCallback onSaveCallback;

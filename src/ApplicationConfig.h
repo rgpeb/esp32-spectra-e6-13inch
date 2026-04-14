@@ -40,6 +40,10 @@ struct ApplicationConfig {
   // Persisted binary update tracking metadata.
   char lastStatusVersion[64];
   char lastStatusEtag[128];
+  char lastAppliedVersion[64];
+  char lastAppliedImageId[128];
+  char lastAppliedPhotoName[128];
+  uint32_t lastSyncEpoch;
   char pairingToken[65];
   char assignedDeviceId[96];
 
@@ -54,6 +58,10 @@ struct ApplicationConfig {
 
     memset(lastStatusVersion, 0, sizeof(lastStatusVersion));
     memset(lastStatusEtag, 0, sizeof(lastStatusEtag));
+    memset(lastAppliedVersion, 0, sizeof(lastAppliedVersion));
+    memset(lastAppliedImageId, 0, sizeof(lastAppliedImageId));
+    memset(lastAppliedPhotoName, 0, sizeof(lastAppliedPhotoName));
+    lastSyncEpoch = 0;
     memset(pairingToken, 0, sizeof(pairingToken));
     memset(assignedDeviceId, 0, sizeof(assignedDeviceId));
 

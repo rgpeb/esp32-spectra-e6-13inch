@@ -4,6 +4,7 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 
 namespace {
 constexpr const char *kBinaryCachePath = "/current.bin";
@@ -129,6 +130,19 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
   if (assetUrlVar.is<const char *>()) {
     status.assetUrl = String(assetUrlVar.as<const char *>());
   }
+  JsonVariantConst imageIdVar = doc["imageId"];
+  if (imageIdVar.is<const char *>()) {
+    status.imageId = String(imageIdVar.as<const char *>());
+  }
+  JsonVariantConst photoNameVar = doc["photoName"];
+  if (photoNameVar.is<const char *>()) {
+    status.photoName = String(photoNameVar.as<const char *>());
+  } else {
+    JsonVariantConst nameVar = doc["name"];
+    if (nameVar.is<const char *>()) {
+      status.photoName = String(nameVar.as<const char *>());
+    }
+  }
 
   if (status.etag.length() == 0) {
     status.etag = statusHeaderEtag;
@@ -138,6 +152,8 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
   Serial.println("Status parsed version string: '" + status.version + "'");
   Serial.println("Status parsed etag: '" + status.etag + "'");
   Serial.println("Status parsed assetUrl: '" + status.assetUrl + "'");
+  Serial.println("Status parsed imageId: '" + status.imageId + "'");
+  Serial.println("Status parsed photoName: '" + status.photoName + "'");
   return status;
 }
 
@@ -399,10 +415,36 @@ void ImageScreen::persistStatusMetadata(const StatusMetadata &status) {
   }
 }
 
-bool ImageScreen::renderAndReport() {
+void ImageScreen::persistAppliedState(const StatusMetadata &status) {
+  copyToFixedBuffer(config.lastAppliedVersion, sizeof(config.lastAppliedVersion),
+                    status.version);
+
+  const String appliedImageId =
+      status.imageId.length() > 0 ? status.imageId : status.photoName;
+  copyToFixedBuffer(config.lastAppliedImageId, sizeof(config.lastAppliedImageId),
+                    appliedImageId);
+  copyToFixedBuffer(config.lastAppliedPhotoName, sizeof(config.lastAppliedPhotoName),
+                    status.photoName);
+
+  const time_t now = time(nullptr);
+  if (now > 0) {
+    config.lastSyncEpoch = static_cast<uint32_t>(now);
+  } else {
+    config.lastSyncEpoch = 0;
+  }
+
+  if (!configStorage.save(config)) {
+    Serial.println("Persist applied state: failed saving last applied state");
+  } else {
+    Serial.println("Persist applied state: saved applied version/image/sync time");
+  }
+}
+
+ImageScreen::RefreshResult ImageScreen::refresh() {
+  RefreshResult result;
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Render skipped: WiFi not connected");
-    return false;
+    return result;
   }
 
   const bool fsMounted = LittleFS.begin(true);
@@ -410,7 +452,7 @@ bool ImageScreen::renderAndReport() {
                 fsMounted ? "success" : "failed");
   if (!fsMounted) {
     Serial.println("Render skipped: LittleFS mount failed");
-    return false;
+    return result;
   }
 
   if (forceFreshFetch) {
@@ -418,17 +460,20 @@ bool ImageScreen::renderAndReport() {
   }
 
   StatusMetadata status = fetchStatusMetadata();
+  result.statusFetchSucceeded = (status.httpCode == HTTP_CODE_OK);
+  result.serverVersion = status.version;
   if (status.httpCode != HTTP_CODE_OK) {
     Serial.println("Render skipped: status fetch did not succeed");
     LittleFS.end();
-    return false;
+    return result;
   }
 
   const bool needsUpdate = isUpdateNeeded(status);
+  result.updatePending = needsUpdate;
   if (!needsUpdate) {
     Serial.println("Update needed: no (keeping current display)");
     LittleFS.end();
-    return false;
+    return result;
   }
 
   const String binaryUrl =
@@ -437,19 +482,26 @@ bool ImageScreen::renderAndReport() {
   if (!downloadBinaryToLittleFS(binaryUrl, String(config.lastStatusEtag))) {
     Serial.println("Render skipped: binary download failed");
     LittleFS.end();
-    return false;
+    return result;
   }
 
   const bool rendered = renderBinaryFromLittleFS();
   if (rendered) {
     persistStatusMetadata(status);
+    persistAppliedState(status);
   } else {
     Serial.println("Render failure");
   }
   logBinaryPathStage(__func__, "final cleanup", kBinaryCachePath);
   LittleFS.remove(kBinaryCachePath);
   LittleFS.end();
-  return rendered;
+  result.rendered = rendered;
+  result.updatePending = !rendered;
+  return result;
+}
+
+bool ImageScreen::renderAndReport() {
+  return refresh().rendered;
 }
 
 void ImageScreen::render() {
