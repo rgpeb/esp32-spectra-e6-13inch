@@ -136,7 +136,7 @@ void ConfigurationServer::setupWebServer() {
                if (wifiConnected && accountLinked) {
                  stage = "frame-ready";
                } else if (wifiConnected) {
-                 stage = "wifi-connected";
+                 stage = "connect-account";
                } else if (currentConfiguration.ssid.length() > 0) {
                  stage = "connect-home-wifi";
                }
@@ -196,7 +196,7 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     doc["wifiConnected"] = wifiConnected;
     doc["pairingToken"] = currentConfiguration.pairingToken;
     doc["pairingUrl"] = pairingUrl;
-    doc["stage"] = wifiConnected ? "wifi-connected" : "connect-home-wifi";
+    doc["stage"] = wifiConnected ? "connect-account" : "connect-home-wifi";
     if (wifiConnected) {
       doc["stationIp"] = stationIp;
     }
@@ -244,7 +244,7 @@ String ConfigurationServer::getConfigurationPage() {
                    currentConfiguration.pairingToken);
   html.replace("{{STATUS_BADGE}}",
                accountLinked ? "Frame ready"
-                             : (wifiConnected ? "Connected to WiFi"
+                             : (wifiConnected ? "Connect account"
                                               : "Welcome"));
   setSelected(html, "{{POWER_SEL_SLEEP}}", currentConfiguration.powerMode == 0);
   setSelected(html, "{{POWER_SEL_AWAKE}}", currentConfiguration.powerMode == 1);

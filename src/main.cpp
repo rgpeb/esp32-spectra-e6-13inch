@@ -63,11 +63,8 @@ SetupUiState getCurrentSetupStage(bool hasShownWifiSuccess, bool hasShownAccount
     return hasSeenSetupClient ? SETUP_STATE_CONNECT_HOME_WIFI
                               : SETUP_STATE_WELCOME_JOIN_WIFI;
   }
-  if (hasShownWifiSuccess && !appConfig->hasAssignedDeviceId()) {
-    return SETUP_STATE_WIFI_CONNECTED;
-  }
   if (!appConfig->hasAssignedDeviceId()) {
-    return SETUP_STATE_CONNECT_ACCOUNT;
+    return SETUP_STATE_WIFI_CONNECTED;
   }
   if (hasShownAccountSuccess) {
     return SETUP_STATE_ACCOUNT_CONNECTED;
@@ -160,11 +157,13 @@ void showConnectHomeWifiScreen() {
 }
 
 void showWiFiConnectedScreen() {
-  auto successScreen = ConfigurationScreen::createStatusScreen(
-      display, "WiFi connected", "Your frame is online.",
-      "Great! Next, connect your account.");
+  const String pairingUrl = getPairingPageUrl();
+  const String qrPayload = ConfigurationScreen::buildPairingQrPayload(pairingUrl);
+  ConfigurationScreen successScreen(display, qrPayload, "Connected to WiFi",
+                                    "Next, connect this frame to your account");
   successScreen.render();
-  Serial.println("[Setup Stage] WiFi success screen shown");
+  Serial.printf("[Setup Stage] WiFi connected + connect-account QR shown (url=%s)\n",
+                pairingUrl.c_str());
 }
 
 void showAccountConnectedScreen() {
