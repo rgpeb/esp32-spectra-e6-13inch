@@ -38,6 +38,7 @@ public:
   ImageScreen(DisplayType &display, ApplicationConfig &config,
               ApplicationConfigStorage &configStorage,
               bool forceFreshFetch = false);
+  bool renderAndReport();
   void render() override;
   int nextRefreshInSeconds() override;
 };

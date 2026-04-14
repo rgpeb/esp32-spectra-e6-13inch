@@ -132,13 +132,13 @@ void ConfigurationServer::setupWebServer() {
                doc["ok"] = true;
                doc["wifiConnected"] = wifiConnected;
                doc["accountLinked"] = accountLinked;
-               String stage = "setup-needed";
+               String stage = "welcome";
                if (wifiConnected && accountLinked) {
                  stage = "frame-ready";
                } else if (wifiConnected) {
-                 stage = "ready-to-link-account";
+                 stage = "connect-account";
                } else if (currentConfiguration.ssid.length() > 0) {
-                 stage = "waiting-for-wifi";
+                 stage = "connect-home-wifi";
                }
                doc["stage"] = stage;
                String payload;
@@ -243,8 +243,8 @@ String ConfigurationServer::getConfigurationPage() {
                    currentConfiguration.pairingToken);
   html.replace("{{STATUS_BADGE}}",
                accountLinked ? "Frame ready"
-                             : (wifiConnected ? "Ready to connect account"
-                                              : "Setup needed"));
+                             : (wifiConnected ? "Connected to WiFi"
+                                              : "Welcome"));
   setSelected(html, "{{POWER_SEL_SLEEP}}", currentConfiguration.powerMode == 0);
   setSelected(html, "{{POWER_SEL_AWAKE}}", currentConfiguration.powerMode == 1);
   return html;

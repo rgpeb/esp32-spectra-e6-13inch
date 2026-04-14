@@ -25,6 +25,8 @@ class ConfigurationScreen : public Screen {
  public:
   ConfigurationScreen(DisplayType& display, const String& qrPayload,
                       const String& titleText, const String& subtitleText);
+  static String buildJoinWifiQrPayload(const String& ssid,
+                                       const String& password);
   static String buildWiFiPortalQrPayload(const String& portalUrl);
   static String buildPairingQrPayload(const String& pairingUrl);
   static ConfigurationScreen createStatusScreen(DisplayType& display,

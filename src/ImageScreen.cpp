@@ -145,6 +145,10 @@ bool ImageScreen::isUpdateNeeded(const StatusMetadata &status) const {
   if (status.httpCode != HTTP_CODE_OK) {
     return false;
   }
+  if (forceFreshFetch) {
+    Serial.println("Update check: forced fresh fetch enabled.");
+    return true;
+  }
 
   const String storedVersion = String(config.lastStatusVersion);
   const String storedEtag = String(config.lastStatusEtag);
@@ -397,10 +401,10 @@ void ImageScreen::persistStatusMetadata(const StatusMetadata &status) {
   }
 }
 
-void ImageScreen::render() {
+bool ImageScreen::renderAndReport() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Render skipped: WiFi not connected");
-    return;
+    return false;
   }
 
   const bool fsMounted = LittleFS.begin(true);
@@ -408,7 +412,7 @@ void ImageScreen::render() {
                 fsMounted ? "success" : "failed");
   if (!fsMounted) {
     Serial.println("Render skipped: LittleFS mount failed");
-    return;
+    return false;
   }
 
   if (forceFreshFetch) {
@@ -419,14 +423,14 @@ void ImageScreen::render() {
   if (status.httpCode != HTTP_CODE_OK) {
     Serial.println("Render skipped: status fetch did not succeed");
     LittleFS.end();
-    return;
+    return false;
   }
 
   const bool needsUpdate = isUpdateNeeded(status);
   if (!needsUpdate) {
     Serial.println("Update needed: no (keeping current display)");
     LittleFS.end();
-    return;
+    return false;
   }
 
   const String binaryUrl =
@@ -435,7 +439,7 @@ void ImageScreen::render() {
   if (!downloadBinaryToLittleFS(binaryUrl, String(config.lastStatusEtag))) {
     Serial.println("Render skipped: binary download failed");
     LittleFS.end();
-    return;
+    return false;
   }
 
   const bool rendered = renderBinaryFromLittleFS();
@@ -447,6 +451,11 @@ void ImageScreen::render() {
   logBinaryPathStage(__func__, "final cleanup", kBinaryCachePath);
   LittleFS.remove(kBinaryCachePath);
   LittleFS.end();
+  return rendered;
+}
+
+void ImageScreen::render() {
+  renderAndReport();
 }
 
 int ImageScreen::nextRefreshInSeconds() { return 1800; }

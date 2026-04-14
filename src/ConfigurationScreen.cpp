@@ -18,6 +18,11 @@ String ConfigurationScreen::buildWiFiPortalQrPayload(const String &portalUrl) {
   return portalUrl;
 }
 
+String ConfigurationScreen::buildJoinWifiQrPayload(const String &ssid,
+                                                   const String &password) {
+  return "WIFI:T:WPA;S:" + ssid + ";P:" + password + ";;";
+}
+
 String ConfigurationScreen::buildPairingQrPayload(const String &pairingUrl) {
   return pairingUrl;
 }
@@ -61,20 +66,21 @@ void ConfigurationScreen::drawQRCode(const String &payload, int x, int y,
 }
 
 void ConfigurationScreen::render() {
-  Serial.println("Displaying setup screen with QR code");
+  Serial.println("Displaying setup screen");
 
   display.init(115200);
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
   Serial.printf("Display dimensions: %d x %d\n", display.width(),
                 display.height());
 
-  const int textLeftMargin = 30;
-  const int lineSpacing = 44;
-  const int qrCodeScale = showQrCode ? 5 : 0;
+  const int textLeftMargin = 34;
+  const int lineSpacing = 40;
+  const int qrCodeScale = showQrCode ? 6 : 0;
   const int qrCodeModuleCount = 57;
   const int qrCodePixelSize = qrCodeModuleCount * qrCodeScale;
-  const int qrCodeQuietZone = 20;
-  const int maxTextWidth = showQrCode ? (display.width() / 2) - 10 : display.width() - 60;
+  const int qrCodeQuietZone = 16;
+  const int maxTextWidth =
+      showQrCode ? (display.width() / 2) - 6 : display.width() - 70;
   const int qrCodeX =
       showQrCode ? display.width() - qrCodePixelSize - qrCodeQuietZone - 28 : 0;
   const int qrCodeY = showQrCode ? (display.height() - qrCodePixelSize) / 2 : 0;
@@ -86,41 +92,38 @@ void ConfigurationScreen::render() {
   display.setFullWindow();
   display.fillScreen(GxEPD_WHITE);
 
-  display.fillRect(0, 0, display.width(), 88, GxEPD_BLACK);
+  display.fillRect(0, 0, display.width(), 96, GxEPD_BLACK);
 
-  gfx.setFont(u8g2_font_open_iconic_embedded_4x_t);
-  gfx.setCursor(textLeftMargin, 55);
-  gfx.print((char)66);
-
-  gfx.setFont(u8g2_font_fur20_tr);
-  gfx.setCursor(textLeftMargin + 40, 56);
+  gfx.setFont(u8g2_font_fur25_tr);
+  gfx.setCursor(textLeftMargin, 62);
   gfx.print("Welcome");
 
   gfx.setBackgroundColor(GxEPD_WHITE);
   gfx.setForegroundColor(GxEPD_BLACK);
 
-  int currentY = 138;
-  gfx.setFont(u8g2_font_fur20_tr);
+  int currentY = 152;
+  gfx.setFont(u8g2_font_fur25_tr);
   gfx.setCursor(textLeftMargin, currentY);
   gfx.print(titleText);
-  currentY += lineSpacing + 4;
+  currentY += lineSpacing + 8;
 
-  gfx.setFont(u8g2_font_fur17_tr);
-  gfx.setCursor(textLeftMargin, currentY);
-  gfx.print(subtitleText.substring(0, min((size_t)subtitleText.length(), (size_t)48)));
-  currentY += lineSpacing;
-  if (subtitleText.length() > 48) {
-    gfx.setCursor(textLeftMargin, currentY);
-    gfx.print(subtitleText.substring(48));
-    currentY += lineSpacing;
-  }
   gfx.setFont(u8g2_font_helvB14_tr);
   gfx.setCursor(textLeftMargin, currentY);
-  gfx.print(helperText.substring(0, min((size_t)helperText.length(), (size_t)56)));
-  currentY += lineSpacing - 6;
-  if (helperText.length() > 56) {
+  gfx.print(
+      subtitleText.substring(0, min((size_t)subtitleText.length(), (size_t)56)));
+  currentY += lineSpacing - 2;
+  if (subtitleText.length() > 56) {
     gfx.setCursor(textLeftMargin, currentY);
-    gfx.print(helperText.substring(56));
+    gfx.print(subtitleText.substring(56));
+    currentY += lineSpacing;
+  }
+  gfx.setFont(u8g2_font_helvR14_tr);
+  gfx.setCursor(textLeftMargin, currentY);
+  gfx.print(helperText.substring(0, min((size_t)helperText.length(), (size_t)60)));
+  currentY += lineSpacing - 6;
+  if (helperText.length() > 60) {
+    gfx.setCursor(textLeftMargin, currentY);
+    gfx.print(helperText.substring(60));
   }
 
   if (showQrCode) {
@@ -128,12 +131,12 @@ void ConfigurationScreen::render() {
     int qrBgY = qrCodeY - qrCodeQuietZone;
     int qrBgSize = qrCodePixelSize + (2 * qrCodeQuietZone);
 
-    display.drawRect(18, 102, maxTextWidth, 188, GxEPD_BLACK);
+    display.drawRect(18, 110, maxTextWidth, 180, GxEPD_BLACK);
     display.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize, GxEPD_WHITE);
     display.drawRect(qrBgX - 3, qrBgY - 3, qrBgSize + 6, qrBgSize + 6, GxEPD_BLACK);
     drawQRCode(qrPayload, qrCodeX, qrCodeY, qrCodeScale);
   } else {
-    display.drawRect(18, 102, display.width() - 36, 188, GxEPD_BLACK);
+    display.drawRect(18, 110, display.width() - 36, 180, GxEPD_BLACK);
   }
 
   display.display();
