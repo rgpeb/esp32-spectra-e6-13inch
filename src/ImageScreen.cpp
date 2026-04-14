@@ -146,8 +146,7 @@ bool ImageScreen::isUpdateNeeded(const StatusMetadata &status) const {
     return false;
   }
   if (forceFreshFetch) {
-    Serial.println("Update check: forced fresh fetch enabled.");
-    return true;
+    Serial.println("Update check: forced fresh fetch enabled (still comparing version/etag).");
   }
 
   const String storedVersion = String(config.lastStatusVersion);
@@ -368,9 +367,6 @@ bool ImageScreen::renderBinaryFromLittleFS() {
   display.init(115200);
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
   display.setFullWindow();
-  Serial.println("Render path: clearing panel to white before new image.");
-  display.fillScreen(GxEPD_WHITE);
-  display.display(false);
 
   logBinaryPathStage(__func__, "decode framebuffer read", kBinaryCachePath);
   const bool loaded = display.loadNativeFrameBuffer(in, kNativeBinarySize);
