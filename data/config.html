@@ -74,7 +74,7 @@
 </head>
 <body>
   <h1>Welcome</h1>
-  <p>Let’s finish setup so your frame can show photos.</p>
+  <p>Let’s finish setup so your frame can start showing photos.</p>
 
   <div class="card">
     <span id="stageBadge" class="pill">{{STATUS_BADGE}}</span>
@@ -82,10 +82,10 @@
     <p id="stageText">Checking frame status…</p>
     <ol id="steps" class="steps">
       <li data-step="welcome">Welcome / join frame WiFi</li>
-      <li data-step="connect-home-wifi">Connect home WiFi</li>
+      <li data-step="connect-home-wifi">Open setup portal / enter home WiFi</li>
       <li data-step="wifi-connected">Connected to WiFi</li>
-      <li data-step="connect-account">Connect account</li>
-      <li data-step="frame-ready">Frame ready</li>
+      <li data-step="connect-account">Connect to your account</li>
+      <li data-step="frame-ready">Account connected / ready</li>
     </ol>
   </div>
 
@@ -109,8 +109,8 @@
   </form>
 
   <div class="card">
-    <h2>Connect to your account</h2>
-    <p>After WiFi is connected, open this link on your phone:</p>
+    <h2>Connect your account</h2>
+    <p>After WiFi is connected, open this link on your phone to finish setup:</p>
     <p class="small"><a id="pairingLink" href="{{PAIRING_URL}}">{{PAIRING_URL}}</a></p>
   </div>
 
@@ -149,7 +149,8 @@
       const map = {
         'welcome': ['Welcome', 'Join the frame WiFi on your phone to begin setup.', 'welcome'],
         'connect-home-wifi': ['Connect home WiFi', 'Open this page and enter your home WiFi details.', 'connect-home-wifi'],
-        'connect-account': ['Connected to WiFi', 'WiFi is connected. Next: connect your account.', 'connect-account'],
+        'wifi-connected': ['Connected to WiFi', 'Great. Next: connect your account.', 'wifi-connected'],
+        'connect-account': ['Connect account', 'Scan the account QR on your frame to finish setup.', 'connect-account'],
         'frame-ready': ['Frame ready', 'Your frame is connected. Browse the library and choose a photo.', 'frame-ready']
       };
       const [badge, text, step] = map[stage] || map['welcome'];
@@ -191,8 +192,8 @@
         if (!res.ok) throw new Error('save failed');
         const data = await res.json();
         if (data?.wifiConnected) {
-          setStatus('Connected. Next: connect your account.');
-          paintStage('connect-account');
+          setStatus('Connected to WiFi. Next: connect your account.');
+          paintStage('wifi-connected');
         } else {
           setStatus('Saved. Keep this page open while the frame joins WiFi.');
           paintStage('connect-home-wifi');

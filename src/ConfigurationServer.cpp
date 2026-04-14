@@ -136,7 +136,7 @@ void ConfigurationServer::setupWebServer() {
                if (wifiConnected && accountLinked) {
                  stage = "frame-ready";
                } else if (wifiConnected) {
-                 stage = "connect-account";
+                 stage = "wifi-connected";
                } else if (currentConfiguration.ssid.length() > 0) {
                  stage = "connect-home-wifi";
                }
@@ -196,6 +196,7 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
     doc["wifiConnected"] = wifiConnected;
     doc["pairingToken"] = currentConfiguration.pairingToken;
     doc["pairingUrl"] = pairingUrl;
+    doc["stage"] = wifiConnected ? "wifi-connected" : "connect-home-wifi";
     if (wifiConnected) {
       doc["stationIp"] = stationIp;
     }
