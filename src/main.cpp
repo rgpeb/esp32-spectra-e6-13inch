@@ -25,7 +25,9 @@ constexpr unsigned long INITIAL_FAST_REFRESH_INTERVAL_MS = 10000UL;
 constexpr unsigned long INITIAL_FAST_REFRESH_WINDOW_MS = 90UL * 1000UL;
 constexpr unsigned long INITIAL_PROMPT_REFRESH_DELAY_MS = 1500UL;
 constexpr const char *kBinaryCachePath = "/current.bin";
-constexpr const char *kPairingUnlinkPath = "/pairing/unlink";
+constexpr const char *kFactoryResetPath = "/device/factory-reset";
+constexpr const char *kFactoryResetByDevicePrefix = "/device/";
+constexpr const char *kFactoryResetByTokenPrefix = "/device/by-token/";
 enum SetupUiState : uint8_t {
   SETUP_STATE_CONNECT_HOME_WIFI = 0,
   SETUP_STATE_CONNECT_ACCOUNT = 1,
@@ -48,8 +50,17 @@ String getPairingStatusUrl() {
          "?token=" + String(appConfig->pairingToken);
 }
 
-String getPairingPageUrl() {
-  return String(PAIRING_PAGE_BASE_URL) + "?token=" + String(appConfig->pairingToken);
+String getPortalUrlForCurrentNetwork() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return "";
+  }
+
+  const String localIp = WiFi.localIP().toString();
+  if (localIp.length() == 0 || localIp == "0.0.0.0") {
+    return "";
+  }
+
+  return "http://" + localIp + "/";
 }
 
 SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
@@ -130,23 +141,37 @@ bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
 }
 
 void showConnectHomeWifiScreen() {
-  const String portalUrl = "http://192.168.4.1/";
-  const String qrPayload = ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
+  const String qrPayload = ConfigurationScreen::buildJoinWifiQrPayload(
+      String(ConfigurationServer::WIFI_AP_NAME),
+      String(ConfigurationServer::WIFI_AP_PASSWORD));
   ConfigurationScreen setupScreen(
       display, qrPayload, "Connect this frame",
-      "Join Framey-Config and wait for the setup portal popup.");
+      "Scan to join Framey-Config, then open the setup portal on your phone.");
   setupScreen.render();
-  Serial.printf("[Setup Stage] Home WiFi setup shown with portal fallback QR (portal=%s)\n",
-                portalUrl.c_str());
+  Serial.printf(
+      "[Setup Stage] Home WiFi setup shown with AP join QR (ssid=%s)\n",
+      ConfigurationServer::WIFI_AP_NAME);
 }
 
 void showPairingSetupScreen() {
-  const String pairingUrl = getPairingPageUrl();
-  const String qrPayload = ConfigurationScreen::buildPairingQrPayload(pairingUrl);
-  ConfigurationScreen setupScreen(display, qrPayload, "Connect to your account",
-                                  "Scan this QR to finish setup.");
-  setupScreen.render();
-  Serial.printf("[Setup Stage] Pairing QR shown (url=%s)\n", pairingUrl.c_str());
+  const String portalUrl = getPortalUrlForCurrentNetwork();
+  if (portalUrl.length() > 0) {
+    const String qrPayload =
+        ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
+    ConfigurationScreen setupScreen(
+        display, qrPayload, "Connect to your account",
+        "Scan this QR to open this frame on your WiFi.");
+    setupScreen.render();
+    Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",
+                  portalUrl.c_str());
+  } else {
+    auto statusScreen = ConfigurationScreen::createStatusScreen(
+        display, "Connect to your account",
+        "Waiting for local network address.",
+        "Your router is still assigning an IP. This will refresh shortly.");
+    statusScreen.render();
+    Serial.println("[Setup Stage] Pairing portal URL unavailable (no valid local IP yet).");
+  }
 }
 
 void showWaitingForFirstPhotoScreen() {
@@ -187,17 +212,7 @@ void clearCachedBinaryState() {
   LittleFS.end();
 }
 
-bool notifyServerBeforeReset() {
-  if (!appConfig || WiFi.status() != WL_CONNECTED) {
-    Serial.println("Reset unlink notify skipped: WiFi not connected.");
-    return false;
-  }
-  if (!appConfig->hasPairingToken() && !appConfig->hasAssignedDeviceId()) {
-    Serial.println("Reset unlink notify skipped: no pairing token or assigned deviceId.");
-    return false;
-  }
-
-  const String url = String(DEVICE_SERVER_BASE_URL) + kPairingUnlinkPath;
+bool postFactoryResetSignal(const String &url, const JsonDocument &payload) {
   std::unique_ptr<WiFiClient> client;
   if (url.startsWith("https://")) {
     auto secureClient = new WiFiClientSecure;
@@ -211,20 +226,60 @@ bool notifyServerBeforeReset() {
   http.begin(*client, url);
   http.setTimeout(10000);
   http.addHeader("Content-Type", "application/json");
+  if (appConfig && appConfig->hasPairingToken()) {
+    http.addHeader("x-frame-reset-token", String(appConfig->pairingToken));
+  }
   attachLocalPortalHeaders(http);
 
-  JsonDocument payload;
-  payload["token"] = String(appConfig->pairingToken);
-  payload["deviceId"] = String(appConfig->assignedDeviceId);
   String body;
   serializeJson(payload, body);
 
   const int status = http.POST(body);
   http.end();
   const bool ok = (status >= 200 && status < 300);
-  Serial.printf("Reset unlink notify %s (HTTP %d, url=%s)\n",
+  Serial.printf("Factory reset notify %s (HTTP %d, url=%s)\n",
                 ok ? "succeeded" : "failed", status, url.c_str());
   return ok;
+}
+
+bool notifyServerBeforeReset() {
+  if (!appConfig || WiFi.status() != WL_CONNECTED) {
+    Serial.println("Factory reset notify skipped: WiFi not connected.");
+    return false;
+  }
+  if (!appConfig->hasPairingToken() && !appConfig->hasAssignedDeviceId()) {
+    Serial.println(
+        "Factory reset notify skipped: no pairing token or assigned deviceId.");
+    return false;
+  }
+
+  JsonDocument payload;
+  payload["reason"] = "factory-reset";
+
+  if (appConfig->hasPairingToken()) {
+    payload["token"] = String(appConfig->pairingToken);
+    const String byTokenUrl = String(DEVICE_SERVER_BASE_URL) +
+                              kFactoryResetByTokenPrefix +
+                              String(appConfig->pairingToken) +
+                              "/factory-reset";
+    if (postFactoryResetSignal(byTokenUrl, payload)) {
+      return true;
+    }
+  }
+
+  if (appConfig->hasAssignedDeviceId()) {
+    payload["deviceId"] = String(appConfig->assignedDeviceId);
+    const String byDeviceUrl = String(DEVICE_SERVER_BASE_URL) +
+                               kFactoryResetByDevicePrefix +
+                               String(appConfig->assignedDeviceId) +
+                               "/factory-reset";
+    if (postFactoryResetSignal(byDeviceUrl, payload)) {
+      return true;
+    }
+  }
+
+  const String genericUrl = String(DEVICE_SERVER_BASE_URL) + kFactoryResetPath;
+  return postFactoryResetSignal(genericUrl, payload);
 }
 
 void processResetAction(ResetAction resetAction) {
@@ -337,8 +392,9 @@ void runWebServer(bool useAP) {
   ConfigurationServer server(serverConfig);
   server.run(saveConfiguration, useAP);
 
-  printf("Web UI available at: http://%s\n",
-         useAP ? "192.168.4.1" : WiFi.localIP().toString().c_str());
+  const String webUiHost =
+      useAP ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
+  printf("Web UI available at: http://%s\n", webUiHost.c_str());
 
   const bool alwaysAwake = appConfig->isAlwaysAwake();
   const unsigned long timeoutMs = alwaysAwake ? 0UL : 10UL * 60UL * 1000UL;
