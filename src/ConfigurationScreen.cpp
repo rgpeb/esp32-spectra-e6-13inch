@@ -77,6 +77,7 @@ void ConfigurationScreen::drawQRCode(const String &payload, int x, int y,
 void ConfigurationScreen::render() { renderWithCommit(true); }
 
 void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
+  // Keep render path quiet: avoid extra "Displaying..." debug logs here.
   display.init(115200);
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
 
@@ -127,6 +128,7 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
       gfx.setFont(u8g2_font_helvB14_tr);
       gfx.setCursor(24, 106);
       gfx.print("Frame setup");
+      // Intentionally no top-right status box in header (keeps header clean).
     }
 
     display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
