@@ -52,20 +52,28 @@ String getPairingStatusUrl() {
 }
 
 String getPortalUrlForCurrentNetwork() {
-  if (WiFi.status() != WL_CONNECTED) {
-    return "";
+  if (WiFi.status() == WL_CONNECTED) {
+    const String localIp = WiFi.localIP().toString();
+    if (localIp.length() > 0 && localIp != "0.0.0.0") {
+      return "http://" + localIp + "/";
+    }
   }
 
-  const String localIp = WiFi.localIP().toString();
-  if (localIp.length() == 0 || localIp == "0.0.0.0") {
-    return "";
+  if (WiFi.softAPgetStationNum() > 0) {
+    const String apIp = WiFi.softAPIP().toString();
+    if (apIp.length() > 0 && apIp != "0.0.0.0") {
+      return "http://" + apIp + "/";
+    }
   }
 
-  return "http://" + localIp + "/";
+  return "";
 }
 
 SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
   if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.softAPgetStationNum() > 0) {
+      return SETUP_STATE_CONNECT_ACCOUNT;
+    }
     return SETUP_STATE_CONNECT_HOME_WIFI;
   }
 
@@ -161,16 +169,21 @@ void showConnectHomeWifiScreen() {
 
 void showPairingSetupScreen() {
   const String portalUrl = getPortalUrlForCurrentNetwork();
+  const bool onHomeWifi = WiFi.status() == WL_CONNECTED;
   const std::vector<String> timelineEntries = {
-      "Home WiFi connected.",
+      onHomeWifi ? "Home WiFi connected."
+                 : "Phone connected to Framey-Config.",
       "Open this frame's portal from your phone.",
-      "Connect your account to complete setup."};
+      onHomeWifi ? "Connect your account to complete setup."
+                 : "Enter home WiFi details in the setup portal."};
   if (portalUrl.length() > 0) {
     const String qrPayload =
         ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        "Scan this QR to open this frame on your WiFi.", timelineEntries, 1, true);
+        onHomeWifi ? "Scan this QR to open this frame on your WiFi."
+                   : "Step 2: scan this QR if the setup portal did not open automatically.",
+        timelineEntries, 1, true);
     setupScreen.render();
     Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",
                   portalUrl.c_str());

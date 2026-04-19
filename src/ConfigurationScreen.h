@@ -44,6 +44,7 @@ class ConfigurationScreen : public Screen {
                                                 bool appendOnlyMode = false);
 
   void render() override;
+  void renderWithCommit(bool commitUpdate);
   int nextRefreshInSeconds() override;
 };
 
