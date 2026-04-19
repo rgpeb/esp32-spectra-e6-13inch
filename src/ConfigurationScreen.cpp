@@ -79,15 +79,21 @@ void ConfigurationScreen::render() {
   const int outerMargin = 24;
   const int cardGap = 16;
   const int headerHeight = 116;
-  const int qrCodeScale = showQrCode ? 8 : 0;
+  const int maxQrCodeScale = 8;
   const int qrCodeModuleCount = 57;
-  const int qrCodePixelSize = qrCodeModuleCount * qrCodeScale;
   const int qrCodeQuietZone = 20;
   const int contentTop = headerHeight + 20;
   const int contentHeight = screenHeight - contentTop - outerMargin;
   const int leftColumnWidth = showQrCode ? (screenWidth * 57) / 100 : screenWidth - (2 * outerMargin);
   const int rightColumnX = outerMargin + leftColumnWidth + cardGap;
   const int rightColumnWidth = showQrCode ? screenWidth - rightColumnX - outerMargin : 0;
+  const int qrAreaWidth = rightColumnWidth - 56;
+  const int qrAreaHeight = contentHeight - 170;
+  const int qrCodeScale =
+      showQrCode ? max(3, min(maxQrCodeScale,
+                              min(qrAreaWidth, qrAreaHeight) / qrCodeModuleCount))
+                 : 0;
+  const int qrCodePixelSize = qrCodeModuleCount * qrCodeScale;
   const int firstCardHeight = 236;
   const int secondCardY = contentTop + firstCardHeight + cardGap;
   const int secondCardHeight = contentTop + contentHeight - secondCardY;
@@ -154,13 +160,21 @@ void ConfigurationScreen::render() {
 
   // Card 2: active step details
   display.drawRect(outerMargin, secondCardY, leftColumnWidth, secondCardHeight, GxEPD_GREEN);
-  gfx.setFont(u8g2_font_fur20_tr);
-  gfx.setCursor(outerMargin + 18, secondCardY + 52);
-  gfx.print(titleText);
+  const int subtitleWrapChars = max(28, (leftColumnWidth - 36) / 14);
+  const int helperWrapChars = max(30, (leftColumnWidth - 36) / 13);
+  int textY = secondCardY + 52;
 
-  int textY = secondCardY + 96;
+  gfx.setFont(u8g2_font_fur20_tr);
+  std::vector<String> titleLines = wrapText(titleText, max(18, subtitleWrapChars - 10));
+  for (const String& line : titleLines) {
+    gfx.setCursor(outerMargin + 18, textY);
+    gfx.print(line);
+    textY += 34;
+  }
+
+  textY += 10;
   gfx.setFont(u8g2_font_helvB14_tr);
-  std::vector<String> subtitleLines = wrapText(subtitleText, 46);
+  std::vector<String> subtitleLines = wrapText(subtitleText, subtitleWrapChars);
   for (const String& line : subtitleLines) {
     gfx.setCursor(outerMargin + 18, textY);
     gfx.print(line);
@@ -168,7 +182,7 @@ void ConfigurationScreen::render() {
   }
 
   gfx.setFont(u8g2_font_helvR14_tr);
-  std::vector<String> helperLines = wrapText(helperText, 48);
+  std::vector<String> helperLines = wrapText(helperText, helperWrapChars);
   for (const String& line : helperLines) {
     gfx.setCursor(outerMargin + 18, textY + 6);
     gfx.print(line);
