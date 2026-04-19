@@ -108,13 +108,13 @@ void ConfigurationScreen::render() {
   };
 
   if (appendOnlyMode) {
-    const int headerHeight = 120;
-    const int stepAreaTop = 160;
-    const int stepGap = 20;
-    const int stepHeight = (screenHeight - stepAreaTop - 40 - (2 * stepGap)) / 3;
+    const int headerHeight = 138;
+    const int stepAreaTop = 154;
+    const int stepGap = 14;
+    const int stepHeight = (screenHeight - stepAreaTop - 24 - (2 * stepGap)) / 3;
     const int stepY = stepAreaTop + (min((uint8_t)2, setupStepSlot) * (stepHeight + stepGap));
-    const int stepX = 26;
-    const int stepWidth = screenWidth - 52;
+    const int stepX = 18;
+    const int stepWidth = screenWidth - 36;
 
     if (setupStepSlot == 0) {
       display.setFullWindow();
@@ -124,61 +124,69 @@ void ConfigurationScreen::render() {
       gfx.setBackgroundColor(GxEPD_GREEN);
       gfx.setForegroundColor(GxEPD_WHITE);
       gfx.setFont(u8g2_font_fur20_tr);
-      gfx.setCursor(24, 62);
+      gfx.setCursor(24, 66);
       gfx.print("Welcome");
-      gfx.setFont(u8g2_font_helvB12_tr);
-      gfx.setCursor(24, 98);
+      gfx.setFont(u8g2_font_helvB14_tr);
+      gfx.setCursor(24, 106);
       gfx.print("Frame setup");
 
+      const int statusBoxWidth = 360;
+      const int statusBoxHeight = 104;
+      const int statusBoxX = screenWidth - statusBoxWidth - 24;
+      const int statusBoxY = 18;
+      display.fillRect(statusBoxX, statusBoxY, statusBoxWidth, statusBoxHeight,
+                       GxEPD_WHITE);
+      display.drawRect(statusBoxX, statusBoxY, statusBoxWidth, statusBoxHeight,
+                       GxEPD_GREEN);
       gfx.setBackgroundColor(GxEPD_WHITE);
       gfx.setForegroundColor(GxEPD_BLACK);
-      gfx.setFont(u8g2_font_helvR10_tr);
-      gfx.setCursor(screenWidth - 320, 48);
+      gfx.setFont(u8g2_font_helvB12_tr);
+      gfx.setCursor(statusBoxX + 16, statusBoxY + 30);
       gfx.print("1) Connect WiFi");
-      gfx.setCursor(screenWidth - 320, 72);
-      gfx.print("2) Connect account");
-      gfx.setCursor(screenWidth - 320, 96);
-      gfx.print("3) Frame ready");
+      gfx.setCursor(statusBoxX + 16, statusBoxY + 58);
+      gfx.print("2) Open portal QR");
+      gfx.setCursor(statusBoxX + 16, statusBoxY + 86);
+      gfx.print("3) Link account");
     }
 
     display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
     gfx.setBackgroundColor(GxEPD_WHITE);
     gfx.setForegroundColor(GxEPD_BLACK);
-    gfx.setFont(u8g2_font_helvB14_tr);
-    gfx.setCursor(stepX + 16, stepY + 34);
+    gfx.setFont(u8g2_font_helvB18_tr);
+    gfx.setCursor(stepX + 18, stepY + 40);
     gfx.print(String("Step ") + String(min((uint8_t)3, (uint8_t)(setupStepSlot + 1))));
-    gfx.setFont(u8g2_font_helvR12_tr);
-    std::vector<String> titleLines = wrapText(titleText, 42);
-    int textY = stepY + 64;
+    gfx.setFont(u8g2_font_helvR14_tr);
+    std::vector<String> titleLines = wrapText(titleText, 52);
+    int textY = stepY + 78;
     for (const String &line : titleLines) {
-      gfx.setCursor(stepX + 16, textY);
+      gfx.setCursor(stepX + 18, textY);
       gfx.print(line);
-      textY += 24;
+      textY += 26;
     }
 
-    std::vector<String> subtitleLines = wrapText(subtitleText, 52);
+    std::vector<String> subtitleLines = wrapText(subtitleText, 64);
     for (const String &line : subtitleLines) {
-      gfx.setCursor(stepX + 16, textY);
+      gfx.setCursor(stepX + 18, textY);
       gfx.print(line);
-      textY += 21;
+      textY += 23;
     }
 
     if (showQrCode) {
-      const int qrScale = 3;
+      const int qrScale = 4;
       const int qrPixelSize = 57 * qrScale;
       const int qrQuietZone = 8;
       const int qrBgSize = qrPixelSize + (2 * qrQuietZone);
-      const int qrBgX = stepX + stepWidth - qrBgSize - 20;
-      const int qrBgY = stepY + 16;
+      const int qrBgX = stepX + stepWidth - qrBgSize - 16;
+      const int qrBgY = stepY + 14;
       display.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize, GxEPD_WHITE);
       display.drawRect(qrBgX - 3, qrBgY - 3, qrBgSize + 6, qrBgSize + 6, GxEPD_GREEN);
       drawQRCode(qrPayload, qrBgX + qrQuietZone, qrBgY + qrQuietZone, qrScale);
     } else {
-      std::vector<String> helperLines = wrapText(helperText, 52);
+      std::vector<String> helperLines = wrapText(helperText, 64);
       for (const String &line : helperLines) {
-        gfx.setCursor(stepX + 16, textY);
+        gfx.setCursor(stepX + 18, textY);
         gfx.print(line);
-        textY += 21;
+        textY += 23;
       }
     }
 
@@ -319,7 +327,6 @@ void ConfigurationScreen::render() {
 
   display.display();
   display.hibernate();
-
   Serial.println("Setup screen rendered successfully");
 }
 
