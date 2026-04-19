@@ -168,8 +168,10 @@ void showConnectHomeWifiScreen() {
 }
 
 void showPairingSetupScreen() {
-  const String portalUrl = getPortalUrlForCurrentNetwork();
   const bool onHomeWifi = WiFi.status() == WL_CONNECTED;
+  const bool hasApClient = WiFi.softAPgetStationNum() > 0;
+  const bool canShowPortalQr = onHomeWifi || hasApClient;
+  const String portalUrl = canShowPortalQr ? getPortalUrlForCurrentNetwork() : "";
   const std::vector<String> timelineEntries = {
       onHomeWifi ? "Home WiFi connected."
                  : "Phone connected to Framey-Config.",
