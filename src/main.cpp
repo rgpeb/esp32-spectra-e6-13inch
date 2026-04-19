@@ -149,7 +149,7 @@ bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
   return true;
 }
 
-void showConnectHomeWifiScreen() {
+void showConnectHomeWifiScreen(bool commitUpdate = true) {
   const String qrPayload = ConfigurationScreen::buildJoinWifiQrPayload(
       String(ConfigurationServer::WIFI_AP_NAME),
       String(ConfigurationServer::WIFI_AP_PASSWORD));
@@ -161,13 +161,13 @@ void showConnectHomeWifiScreen() {
       display, qrPayload, "Connect this frame",
       "Scan to join Framey-Config, then open the setup portal on your phone.",
       timelineEntries, 0, true);
-  setupScreen.render();
+  setupScreen.renderWithCommit(commitUpdate);
   Serial.printf(
       "[Setup Stage] Home WiFi setup shown with AP join QR (ssid=%s)\n",
       ConfigurationServer::WIFI_AP_NAME);
 }
 
-void showPairingSetupScreen() {
+void showPairingSetupScreen(bool commitUpdate = true) {
   const bool onHomeWifi = WiFi.status() == WL_CONNECTED;
   const bool hasApClient = WiFi.softAPgetStationNum() > 0;
   const bool canShowPortalQr = onHomeWifi || hasApClient;
@@ -186,7 +186,7 @@ void showPairingSetupScreen() {
         onHomeWifi ? "Scan this QR to open this frame on your WiFi."
                    : "Step 2: scan this QR if the setup portal did not open automatically.",
         timelineEntries, 1, true);
-    setupScreen.render();
+    setupScreen.renderWithCommit(commitUpdate);
     Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",
                   portalUrl.c_str());
   } else {
@@ -195,7 +195,7 @@ void showPairingSetupScreen() {
         "Waiting for local network address.",
         "Your router is still assigning an IP. This will refresh shortly.",
         timelineEntries, 1, true);
-    statusScreen.render();
+    statusScreen.renderWithCommit(commitUpdate);
     Serial.println("[Setup Stage] Pairing portal URL unavailable (no valid local IP yet).");
   }
 }
