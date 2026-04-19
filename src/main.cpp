@@ -59,9 +59,11 @@ String getPortalUrlForCurrentNetwork() {
     }
   }
 
-  const String apIp = WiFi.softAPIP().toString();
-  if (apIp.length() > 0 && apIp != "0.0.0.0") {
-    return "http://" + apIp + "/";
+  if (WiFi.softAPgetStationNum() > 0) {
+    const String apIp = WiFi.softAPIP().toString();
+    if (apIp.length() > 0 && apIp != "0.0.0.0") {
+      return "http://" + apIp + "/";
+    }
   }
 
   return "";
@@ -69,6 +71,9 @@ String getPortalUrlForCurrentNetwork() {
 
 SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
   if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.softAPgetStationNum() > 0) {
+      return SETUP_STATE_CONNECT_ACCOUNT;
+    }
     return SETUP_STATE_CONNECT_HOME_WIFI;
   }
 
@@ -163,20 +168,23 @@ void showConnectHomeWifiScreen(bool commitUpdate = true) {
 }
 
 void showPairingSetupScreen(bool commitUpdate = true) {
-  const String portalUrl = getPortalUrlForCurrentNetwork();
-  const bool wifiReady = (WiFi.status() == WL_CONNECTED);
+  const bool onHomeWifi = WiFi.status() == WL_CONNECTED;
+  const bool hasApClient = WiFi.softAPgetStationNum() > 0;
+  const bool canShowPortalQr = onHomeWifi || hasApClient;
+  const String portalUrl = canShowPortalQr ? getPortalUrlForCurrentNetwork() : "";
   const std::vector<String> timelineEntries = {
-      wifiReady ? "Home WiFi connected." : "Phone connected to Framey-Config.",
+      onHomeWifi ? "Home WiFi connected."
+                 : "Phone connected to Framey-Config.",
       "Open this frame's portal from your phone.",
-      wifiReady ? "Connect your account to complete setup."
-                : "Save WiFi first, then connect your account."};
+      onHomeWifi ? "Connect your account to complete setup."
+                 : "Enter home WiFi details in the setup portal."};
   if (portalUrl.length() > 0) {
     const String qrPayload =
         ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        wifiReady ? "If the portal did not pop up, scan this QR to open this frame."
-                  : "After Step 1 joins Framey-Config, scan this QR if the portal does not open.",
+        onHomeWifi ? "Scan this QR to open this frame on your WiFi."
+                   : "Step 2: scan this QR if the setup portal did not open automatically.",
         timelineEntries, 1, true);
     setupScreen.renderWithCommit(commitUpdate);
     Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",

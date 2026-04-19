@@ -77,12 +77,9 @@ void ConfigurationScreen::drawQRCode(const String &payload, int x, int y,
 void ConfigurationScreen::render() { renderWithCommit(true); }
 
 void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
-  Serial.println("Displaying setup screen");
-
+  // Keep render path quiet: avoid extra "Displaying..." debug logs here.
   display.init(115200);
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
-  Serial.printf("Display dimensions: %d x %d\n", display.width(),
-                display.height());
 
   const int screenWidth = display.width();
   const int screenHeight = display.height();
@@ -131,24 +128,7 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
       gfx.setFont(u8g2_font_helvB14_tr);
       gfx.setCursor(24, 106);
       gfx.print("Frame setup");
-
-      const int statusBoxWidth = 360;
-      const int statusBoxHeight = 104;
-      const int statusBoxX = screenWidth - statusBoxWidth - 24;
-      const int statusBoxY = 18;
-      display.fillRect(statusBoxX, statusBoxY, statusBoxWidth, statusBoxHeight,
-                       GxEPD_WHITE);
-      display.drawRect(statusBoxX, statusBoxY, statusBoxWidth, statusBoxHeight,
-                       GxEPD_GREEN);
-      gfx.setBackgroundColor(GxEPD_WHITE);
-      gfx.setForegroundColor(GxEPD_BLACK);
-      gfx.setFont(u8g2_font_helvB12_tr);
-      gfx.setCursor(statusBoxX + 16, statusBoxY + 30);
-      gfx.print("1) Connect WiFi");
-      gfx.setCursor(statusBoxX + 16, statusBoxY + 58);
-      gfx.print("2) Open portal QR");
-      gfx.setCursor(statusBoxX + 16, statusBoxY + 86);
-      gfx.print("3) Link account");
+      // Intentionally no top-right status box in header (keeps header clean).
     }
 
     display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
@@ -196,8 +176,6 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
       display.display();
       display.hibernate();
       Serial.println("Setup screen rendered successfully");
-    } else {
-      Serial.println("Setup screen staged (display commit deferred)");
     }
     return;
   }
@@ -335,8 +313,6 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
     display.display();
     display.hibernate();
     Serial.println("Setup screen rendered successfully");
-  } else {
-    Serial.println("Setup screen staged (display commit deferred)");
   }
 }
 
