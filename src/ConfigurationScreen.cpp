@@ -1,6 +1,7 @@
 #include "ConfigurationScreen.h"
 
 #include <memory>
+#include <vector>
 
 #include "HardwareSerial.h"
 
@@ -73,17 +74,45 @@ void ConfigurationScreen::render() {
   Serial.printf("Display dimensions: %d x %d\n", display.width(),
                 display.height());
 
-  const int textLeftMargin = 34;
-  const int lineSpacing = 52;
+  const int screenWidth = display.width();
+  const int screenHeight = display.height();
+  const int outerMargin = 24;
+  const int cardGap = 16;
+  const int headerHeight = 116;
   const int qrCodeScale = showQrCode ? 8 : 0;
   const int qrCodeModuleCount = 57;
   const int qrCodePixelSize = qrCodeModuleCount * qrCodeScale;
-  const int qrCodeQuietZone = 22;
-  const int maxTextWidth =
-      showQrCode ? (display.width() / 2) - 12 : display.width() - 70;
-  const int qrCodeX =
-      showQrCode ? display.width() - qrCodePixelSize - qrCodeQuietZone - 36 : 0;
-  const int qrCodeY = showQrCode ? (display.height() - qrCodePixelSize) / 2 : 0;
+  const int qrCodeQuietZone = 20;
+  const int contentTop = headerHeight + 20;
+  const int contentHeight = screenHeight - contentTop - outerMargin;
+  const int leftColumnWidth = showQrCode ? (screenWidth * 57) / 100 : screenWidth - (2 * outerMargin);
+  const int rightColumnX = outerMargin + leftColumnWidth + cardGap;
+  const int rightColumnWidth = showQrCode ? screenWidth - rightColumnX - outerMargin : 0;
+  const int firstCardHeight = 236;
+  const int secondCardY = contentTop + firstCardHeight + cardGap;
+  const int secondCardHeight = contentTop + contentHeight - secondCardY;
+
+  auto wrapText = [](const String& text, int maxCharsPerLine) {
+    std::vector<String> lines;
+    if (text.length() == 0) return lines;
+
+    String remaining = text;
+    while (remaining.length() > 0) {
+      if (remaining.length() <= maxCharsPerLine) {
+        lines.push_back(remaining);
+        break;
+      }
+
+      int splitAt = maxCharsPerLine;
+      while (splitAt > 0 && remaining.charAt(splitAt) != ' ') splitAt--;
+      if (splitAt <= 0) splitAt = maxCharsPerLine;
+
+      lines.push_back(remaining.substring(0, splitAt));
+      remaining = remaining.substring(splitAt);
+      remaining.trim();
+    }
+    return lines;
+  };
 
   gfx.setFontMode(1);
   gfx.setBackgroundColor(GxEPD_GREEN);
@@ -91,52 +120,81 @@ void ConfigurationScreen::render() {
 
   display.setFullWindow();
   display.fillScreen(GxEPD_WHITE);
-
-  display.fillRect(0, 0, display.width(), 128, GxEPD_GREEN);
+  display.fillRect(0, 0, screenWidth, headerHeight, GxEPD_GREEN);
 
   gfx.setFont(u8g2_font_fur25_tr);
-  gfx.setCursor(textLeftMargin, 86);
+  gfx.setCursor(outerMargin, 74);
   gfx.print("Welcome");
 
+  gfx.setFont(u8g2_font_helvB14_tr);
+  gfx.setCursor(outerMargin, 104);
+  gfx.print("Frame Setup Portal");
+
+  // Card 1: setup progress
+  display.drawRect(outerMargin, contentTop, leftColumnWidth, firstCardHeight, GxEPD_GREEN);
   gfx.setBackgroundColor(GxEPD_WHITE);
   gfx.setForegroundColor(GxEPD_BLACK);
 
-  int currentY = 220;
-  gfx.setFont(u8g2_font_fur25_tr);
-  gfx.setCursor(textLeftMargin, currentY);
-  gfx.print(titleText);
-  currentY += lineSpacing + 12;
-
+  display.fillRect(outerMargin + 18, contentTop + 18, 250, 40, GxEPD_GREEN);
+  gfx.setBackgroundColor(GxEPD_GREEN);
+  gfx.setForegroundColor(GxEPD_WHITE);
   gfx.setFont(u8g2_font_helvB14_tr);
-  gfx.setCursor(textLeftMargin, currentY);
-  gfx.print(
-      subtitleText.substring(0, min((size_t)subtitleText.length(), (size_t)44)));
-  currentY += lineSpacing;
-  if (subtitleText.length() > 44) {
-    gfx.setCursor(textLeftMargin, currentY);
-    gfx.print(subtitleText.substring(44));
-    currentY += lineSpacing;
+  gfx.setCursor(outerMargin + 30, contentTop + 46);
+  gfx.print("SETUP PROGRESS");
+
+  gfx.setBackgroundColor(GxEPD_WHITE);
+  gfx.setForegroundColor(GxEPD_BLACK);
+  gfx.setFont(u8g2_font_helvB14_tr);
+  gfx.setCursor(outerMargin + 18, contentTop + 90);
+  gfx.print("1. Connect home WiFi");
+  gfx.setCursor(outerMargin + 18, contentTop + 128);
+  gfx.print("2. Connect account");
+  gfx.setCursor(outerMargin + 18, contentTop + 166);
+  gfx.print("3. Frame ready");
+
+  // Card 2: active step details
+  display.drawRect(outerMargin, secondCardY, leftColumnWidth, secondCardHeight, GxEPD_GREEN);
+  gfx.setFont(u8g2_font_fur20_tr);
+  gfx.setCursor(outerMargin + 18, secondCardY + 52);
+  gfx.print(titleText);
+
+  int textY = secondCardY + 96;
+  gfx.setFont(u8g2_font_helvB14_tr);
+  std::vector<String> subtitleLines = wrapText(subtitleText, 46);
+  for (const String& line : subtitleLines) {
+    gfx.setCursor(outerMargin + 18, textY);
+    gfx.print(line);
+    textY += 30;
   }
+
   gfx.setFont(u8g2_font_helvR14_tr);
-  gfx.setCursor(textLeftMargin, currentY);
-  gfx.print(helperText.substring(0, min((size_t)helperText.length(), (size_t)46)));
-  currentY += lineSpacing;
-  if (helperText.length() > 46) {
-    gfx.setCursor(textLeftMargin, currentY);
-    gfx.print(helperText.substring(46));
+  std::vector<String> helperLines = wrapText(helperText, 48);
+  for (const String& line : helperLines) {
+    gfx.setCursor(outerMargin + 18, textY + 6);
+    gfx.print(line);
+    textY += 28;
   }
 
   if (showQrCode) {
-    int qrBgX = qrCodeX - qrCodeQuietZone;
-    int qrBgY = qrCodeY - qrCodeQuietZone;
+    int qrCardY = contentTop;
+    int qrCardHeight = contentHeight;
     int qrBgSize = qrCodePixelSize + (2 * qrCodeQuietZone);
+    int qrBgX = rightColumnX + (rightColumnWidth - qrBgSize) / 2;
+    int qrBgY = qrCardY + 112;
+    int qrCodeX = qrBgX + qrCodeQuietZone;
+    int qrCodeY = qrBgY + qrCodeQuietZone;
 
-    display.drawRect(18, 160, maxTextWidth, 260, GxEPD_GREEN);
+    display.drawRect(rightColumnX, qrCardY, rightColumnWidth, qrCardHeight, GxEPD_GREEN);
+    gfx.setFont(u8g2_font_helvB14_tr);
+    gfx.setCursor(rightColumnX + 18, qrCardY + 50);
+    gfx.print("Scan to continue");
+    gfx.setFont(u8g2_font_helvR14_tr);
+    gfx.setCursor(rightColumnX + 18, qrCardY + 84);
+    gfx.print("Use your phone camera");
+
     display.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize, GxEPD_WHITE);
     display.drawRect(qrBgX - 4, qrBgY - 4, qrBgSize + 8, qrBgSize + 8, GxEPD_GREEN);
     drawQRCode(qrPayload, qrCodeX, qrCodeY, qrCodeScale);
-  } else {
-    display.drawRect(18, 160, display.width() - 36, 260, GxEPD_GREEN);
   }
 
   display.display();
