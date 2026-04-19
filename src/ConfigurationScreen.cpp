@@ -8,9 +8,15 @@
 ConfigurationScreen::ConfigurationScreen(DisplayType &display,
                                          const String &qrPayload,
                                          const String &titleText,
-                                         const String &subtitleText)
+                                         const String &subtitleText,
+                                         const std::vector<String> &timelineEntries,
+                                         uint8_t setupStepSlot,
+                                         bool appendOnlyMode)
     : display(display), qrPayload(qrPayload), titleText(titleText),
       subtitleText(subtitleText), helperText("Scan with your phone to continue."),
+      timelineEntries(timelineEntries),
+      setupStepSlot(setupStepSlot),
+      appendOnlyMode(appendOnlyMode),
       showQrCode(qrPayload.length() > 0) {
   gfx.begin(display);
 }
@@ -30,8 +36,10 @@ String ConfigurationScreen::buildPairingQrPayload(const String &pairingUrl) {
 
 ConfigurationScreen ConfigurationScreen::createStatusScreen(
     DisplayType &display, const String &titleText, const String &subtitleText,
-    const String &helperText) {
-  ConfigurationScreen screen(display, "", titleText, subtitleText);
+    const String &helperText, const std::vector<String> &timelineEntries,
+    uint8_t setupStepSlot, bool appendOnlyMode) {
+  ConfigurationScreen screen(display, "", titleText, subtitleText,
+                             timelineEntries, setupStepSlot, appendOnlyMode);
   screen.helperText = helperText;
   screen.showQrCode = false;
   return screen;
@@ -76,27 +84,6 @@ void ConfigurationScreen::render() {
 
   const int screenWidth = display.width();
   const int screenHeight = display.height();
-  const int outerMargin = 24;
-  const int cardGap = 16;
-  const int headerHeight = 116;
-  const int maxQrCodeScale = 8;
-  const int qrCodeModuleCount = 57;
-  const int qrCodeQuietZone = 20;
-  const int contentTop = headerHeight + 20;
-  const int contentHeight = screenHeight - contentTop - outerMargin;
-  const int leftColumnWidth = showQrCode ? (screenWidth * 57) / 100 : screenWidth - (2 * outerMargin);
-  const int rightColumnX = outerMargin + leftColumnWidth + cardGap;
-  const int rightColumnWidth = showQrCode ? screenWidth - rightColumnX - outerMargin : 0;
-  const int qrAreaWidth = rightColumnWidth - 56;
-  const int qrAreaHeight = contentHeight - 170;
-  const int qrCodeScale =
-      showQrCode ? max(3, min(maxQrCodeScale,
-                              min(qrAreaWidth, qrAreaHeight) / qrCodeModuleCount))
-                 : 0;
-  const int qrCodePixelSize = qrCodeModuleCount * qrCodeScale;
-  const int firstCardHeight = 236;
-  const int secondCardY = contentTop + firstCardHeight + cardGap;
-  const int secondCardHeight = contentTop + contentHeight - secondCardY;
 
   auto wrapText = [](const String& text, int maxCharsPerLine) {
     std::vector<String> lines;
@@ -119,6 +106,109 @@ void ConfigurationScreen::render() {
     }
     return lines;
   };
+
+  if (appendOnlyMode) {
+    const int headerHeight = 120;
+    const int stepAreaTop = 160;
+    const int stepGap = 20;
+    const int stepHeight = (screenHeight - stepAreaTop - 40 - (2 * stepGap)) / 3;
+    const int stepY = stepAreaTop + (min((uint8_t)2, setupStepSlot) * (stepHeight + stepGap));
+    const int stepX = 26;
+    const int stepWidth = screenWidth - 52;
+
+    if (setupStepSlot == 0) {
+      display.setFullWindow();
+      display.fillScreen(GxEPD_WHITE);
+      display.fillRect(0, 0, screenWidth, headerHeight, GxEPD_GREEN);
+      gfx.setFontMode(1);
+      gfx.setBackgroundColor(GxEPD_GREEN);
+      gfx.setForegroundColor(GxEPD_WHITE);
+      gfx.setFont(u8g2_font_fur20_tr);
+      gfx.setCursor(24, 62);
+      gfx.print("Welcome");
+      gfx.setFont(u8g2_font_helvB12_tr);
+      gfx.setCursor(24, 98);
+      gfx.print("Frame setup");
+
+      gfx.setBackgroundColor(GxEPD_WHITE);
+      gfx.setForegroundColor(GxEPD_BLACK);
+      gfx.setFont(u8g2_font_helvR10_tr);
+      gfx.setCursor(screenWidth - 320, 48);
+      gfx.print("1) Connect WiFi");
+      gfx.setCursor(screenWidth - 320, 72);
+      gfx.print("2) Connect account");
+      gfx.setCursor(screenWidth - 320, 96);
+      gfx.print("3) Frame ready");
+    }
+
+    display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
+    gfx.setBackgroundColor(GxEPD_WHITE);
+    gfx.setForegroundColor(GxEPD_BLACK);
+    gfx.setFont(u8g2_font_helvB14_tr);
+    gfx.setCursor(stepX + 16, stepY + 34);
+    gfx.print(String("Step ") + String(min((uint8_t)3, (uint8_t)(setupStepSlot + 1))));
+    gfx.setFont(u8g2_font_helvR12_tr);
+    std::vector<String> titleLines = wrapText(titleText, 42);
+    int textY = stepY + 64;
+    for (const String &line : titleLines) {
+      gfx.setCursor(stepX + 16, textY);
+      gfx.print(line);
+      textY += 24;
+    }
+
+    std::vector<String> subtitleLines = wrapText(subtitleText, 52);
+    for (const String &line : subtitleLines) {
+      gfx.setCursor(stepX + 16, textY);
+      gfx.print(line);
+      textY += 21;
+    }
+
+    if (showQrCode) {
+      const int qrScale = 3;
+      const int qrPixelSize = 57 * qrScale;
+      const int qrQuietZone = 8;
+      const int qrBgSize = qrPixelSize + (2 * qrQuietZone);
+      const int qrBgX = stepX + stepWidth - qrBgSize - 20;
+      const int qrBgY = stepY + 16;
+      display.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize, GxEPD_WHITE);
+      display.drawRect(qrBgX - 3, qrBgY - 3, qrBgSize + 6, qrBgSize + 6, GxEPD_GREEN);
+      drawQRCode(qrPayload, qrBgX + qrQuietZone, qrBgY + qrQuietZone, qrScale);
+    } else {
+      std::vector<String> helperLines = wrapText(helperText, 52);
+      for (const String &line : helperLines) {
+        gfx.setCursor(stepX + 16, textY);
+        gfx.print(line);
+        textY += 21;
+      }
+    }
+
+    display.display();
+    display.hibernate();
+    Serial.println("Setup screen rendered successfully");
+    return;
+  }
+
+  const int outerMargin = 24;
+  const int cardGap = 16;
+  const int headerHeight = 116;
+  const int maxQrCodeScale = 8;
+  const int qrCodeModuleCount = 57;
+  const int qrCodeQuietZone = 20;
+  const int contentTop = headerHeight + 20;
+  const int contentHeight = screenHeight - contentTop - outerMargin;
+  const int leftColumnWidth = showQrCode ? (screenWidth * 57) / 100 : screenWidth - (2 * outerMargin);
+  const int rightColumnX = outerMargin + leftColumnWidth + cardGap;
+  const int rightColumnWidth = showQrCode ? screenWidth - rightColumnX - outerMargin : 0;
+  const int qrAreaWidth = rightColumnWidth - 56;
+  const int qrAreaHeight = contentHeight - 170;
+  const int qrCodeScale =
+      showQrCode ? max(3, min(maxQrCodeScale,
+                              min(qrAreaWidth, qrAreaHeight) / qrCodeModuleCount))
+                 : 0;
+  const int qrCodePixelSize = qrCodeModuleCount * qrCodeScale;
+  const int firstCardHeight = 236;
+  const int secondCardY = contentTop + firstCardHeight + cardGap;
+  const int secondCardHeight = contentTop + contentHeight - secondCardY;
 
   gfx.setFontMode(1);
   gfx.setBackgroundColor(GxEPD_GREEN);
@@ -160,33 +250,49 @@ void ConfigurationScreen::render() {
 
   // Card 2: active step details
   display.drawRect(outerMargin, secondCardY, leftColumnWidth, secondCardHeight, GxEPD_GREEN);
-  const int subtitleWrapChars = max(28, (leftColumnWidth - 36) / 14);
   const int helperWrapChars = max(30, (leftColumnWidth - 36) / 13);
   int textY = secondCardY + 52;
 
-  gfx.setFont(u8g2_font_fur20_tr);
-  std::vector<String> titleLines = wrapText(titleText, max(18, subtitleWrapChars - 10));
-  for (const String& line : titleLines) {
-    gfx.setCursor(outerMargin + 18, textY);
-    gfx.print(line);
-    textY += 34;
+  std::vector<String> entries = timelineEntries;
+  if (entries.empty()) {
+    if (titleText.length() > 0) {
+      entries.push_back(titleText);
+    }
+    if (subtitleText.length() > 0) {
+      entries.push_back(subtitleText);
+    }
+    if (helperText.length() > 0) {
+      entries.push_back(helperText);
+    }
   }
 
-  textY += 10;
   gfx.setFont(u8g2_font_helvB14_tr);
-  std::vector<String> subtitleLines = wrapText(subtitleText, subtitleWrapChars);
-  for (const String& line : subtitleLines) {
-    gfx.setCursor(outerMargin + 18, textY);
-    gfx.print(line);
-    textY += 30;
-  }
+  gfx.setCursor(outerMargin + 18, textY);
+  gfx.print("Stage updates");
+  textY += 28;
 
   gfx.setFont(u8g2_font_helvR14_tr);
-  std::vector<String> helperLines = wrapText(helperText, helperWrapChars);
-  for (const String& line : helperLines) {
-    gfx.setCursor(outerMargin + 18, textY + 6);
-    gfx.print(line);
-    textY += 28;
+  for (size_t i = 0; i < entries.size(); ++i) {
+    const String prefix = String(i + 1) + ". ";
+    std::vector<String> wrapped = wrapText(entries[i], helperWrapChars - 4);
+    bool firstLine = true;
+    for (const String &line : wrapped) {
+      gfx.setCursor(outerMargin + 18, textY);
+      if (firstLine) {
+        gfx.print(prefix + line);
+        firstLine = false;
+      } else {
+        gfx.print("   " + line);
+      }
+      textY += 24;
+      if (textY >= secondCardY + secondCardHeight - 18) {
+        break;
+      }
+    }
+    textY += 6;
+    if (textY >= secondCardY + secondCardHeight - 18) {
+      break;
+    }
   }
 
   if (showQrCode) {

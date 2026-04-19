@@ -414,6 +414,15 @@ bool ImageScreen::renderBinaryFromLittleFS(const StatusMetadata &status) {
   display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
   display.setFullWindow();
 
+  Serial.println("Render path: performing white clear refresh before loading new image.");
+  display.fillScreen(GxEPD_WHITE);
+  display.display(false);
+  // Re-initialize panel state after the white clear cycle so the new image
+  // is transferred with a clean full-refresh sequence.
+  display.init(115200);
+  display.setRotation(ApplicationConfig::DISPLAY_ROTATION);
+  display.setFullWindow();
+
   logBinaryPathStage(__func__, "decode framebuffer read", kBinaryCachePath);
   uint8_t rotationTurnsCW = 0;
   if (status.rotationDegrees == 180) {
