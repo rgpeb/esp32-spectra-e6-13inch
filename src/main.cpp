@@ -21,20 +21,16 @@ namespace {
 constexpr unsigned long SERVER_LOOP_DELAY_MS = 10;
 constexpr unsigned long AWAKE_AUTO_REFRESH_MS = 5UL * 60UL * 1000UL;
 constexpr unsigned long PAIRING_POLL_INTERVAL_MS = 5000UL;
-constexpr unsigned long STAGE_SUCCESS_HOLD_MS = 2500UL;
 constexpr unsigned long INITIAL_FAST_REFRESH_INTERVAL_MS = 10000UL;
 constexpr unsigned long INITIAL_FAST_REFRESH_WINDOW_MS = 90UL * 1000UL;
 constexpr unsigned long INITIAL_PROMPT_REFRESH_DELAY_MS = 1500UL;
 constexpr const char *kBinaryCachePath = "/current.bin";
 constexpr const char *kPairingUnlinkPath = "/pairing/unlink";
 enum SetupUiState : uint8_t {
-  SETUP_STATE_WELCOME_JOIN_WIFI = 0,
-  SETUP_STATE_CONNECT_HOME_WIFI = 1,
-  SETUP_STATE_WIFI_CONNECTED = 2,
-  SETUP_STATE_CONNECT_ACCOUNT = 3,
-  SETUP_STATE_ACCOUNT_CONNECTED = 4,
-  SETUP_STATE_WAITING_FIRST_PHOTO = 5,
-  SETUP_STATE_READY = 6,
+  SETUP_STATE_CONNECT_HOME_WIFI = 0,
+  SETUP_STATE_CONNECT_ACCOUNT = 1,
+  SETUP_STATE_WAITING_FIRST_PHOTO = 2,
+  SETUP_STATE_READY = 3,
 };
 
 String generatePairingToken() {
@@ -56,21 +52,13 @@ String getPairingPageUrl() {
   return String(PAIRING_PAGE_BASE_URL) + "?token=" + String(appConfig->pairingToken);
 }
 
-SetupUiState getCurrentSetupStage(bool hasShownWifiSuccess, bool hasShownAccountSuccess,
-                                  bool hasDisplayedFirstImage,
-                                  bool hasSeenSetupClient) {
+SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
   if (WiFi.status() != WL_CONNECTED) {
-    return hasSeenSetupClient ? SETUP_STATE_CONNECT_HOME_WIFI
-                              : SETUP_STATE_WELCOME_JOIN_WIFI;
+    return SETUP_STATE_CONNECT_HOME_WIFI;
   }
 
   if (!appConfig->hasAssignedDeviceId()) {
-    return hasShownWifiSuccess ? SETUP_STATE_CONNECT_ACCOUNT
-                               : SETUP_STATE_WIFI_CONNECTED;
-  }
-
-  if (!hasShownAccountSuccess) {
-    return SETUP_STATE_ACCOUNT_CONNECTED;
+    return SETUP_STATE_CONNECT_ACCOUNT;
   }
 
   if (!hasDisplayedFirstImage) {
@@ -141,42 +129,15 @@ bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
   return true;
 }
 
-void showWelcomeJoinWifiScreen() {
-  const String qrPayload = ConfigurationScreen::buildJoinWifiQrPayload(
-      ConfigurationServer::WIFI_AP_NAME, ConfigurationServer::WIFI_AP_PASSWORD);
-  ConfigurationScreen setupScreen(
-      display, qrPayload, "Join frame WiFi",
-      "On your phone, join the frame setup network.");
-  setupScreen.render();
-  Serial.println("[Setup Stage] Welcome + join frame WiFi shown");
-}
-
 void showConnectHomeWifiScreen() {
   const String portalUrl = "http://192.168.4.1/";
   const String qrPayload = ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
-  ConfigurationScreen setupScreen(display, qrPayload, "Connect this frame",
-                                  "Open setup, then enter your home WiFi.");
+  ConfigurationScreen setupScreen(
+      display, qrPayload, "Connect this frame",
+      "Join Framey-Config and wait for the setup portal popup.");
   setupScreen.render();
-  Serial.printf("[Setup Stage] Home WiFi portal step shown (portal=%s)\n",
+  Serial.printf("[Setup Stage] Home WiFi setup shown with portal fallback QR (portal=%s)\n",
                 portalUrl.c_str());
-}
-
-void showWiFiConnectedScreen() {
-  const String pairingUrl = getPairingPageUrl();
-  const String qrPayload = ConfigurationScreen::buildPairingQrPayload(pairingUrl);
-  ConfigurationScreen successScreen(display, qrPayload, "Connected to WiFi",
-                                    "Next, connect this frame to your account");
-  successScreen.render();
-  Serial.printf("[Setup Stage] WiFi connected + connect-account QR shown (url=%s)\n",
-                pairingUrl.c_str());
-}
-
-void showAccountConnectedScreen() {
-  auto successScreen = ConfigurationScreen::createStatusScreen(
-      display, "Your frame is connected", "Account linked successfully.",
-      "Browse the library and choose a photo.");
-  successScreen.render();
-  Serial.println("[Setup Stage] Account linked success screen shown");
 }
 
 void showPairingSetupScreen() {
@@ -198,20 +159,11 @@ void showWaitingForFirstPhotoScreen() {
 
 void showSetupStageScreen(SetupUiState stage) {
   switch (stage) {
-  case SETUP_STATE_WELCOME_JOIN_WIFI:
-    showWelcomeJoinWifiScreen();
-    break;
   case SETUP_STATE_CONNECT_HOME_WIFI:
     showConnectHomeWifiScreen();
     break;
-  case SETUP_STATE_WIFI_CONNECTED:
-    showWiFiConnectedScreen();
-    break;
   case SETUP_STATE_CONNECT_ACCOUNT:
     showPairingSetupScreen();
-    break;
-  case SETUP_STATE_ACCOUNT_CONNECTED:
-    showAccountConnectedScreen();
     break;
   case SETUP_STATE_WAITING_FIRST_PHOTO:
     showWaitingForFirstPhotoScreen();
@@ -395,16 +347,10 @@ void runWebServer(bool useAP) {
   unsigned long lastFastRefresh = 0;
   const unsigned long fastRefreshWindowStart = millis();
   unsigned long lastPairingPoll = 0;
-  unsigned long stageRenderedAt = 0;
   bool firstImageShown = false;
-  bool wifiSuccessPending = false;
-  bool accountSuccessPending = false;
-  bool hasShownWifiSuccess = false;
-  bool hasShownAccountSuccess = false;
   bool ranInitialPromptRefresh = false;
   unsigned long initialPromptAt = millis();
   SetupUiState lastRenderedSetupState = SETUP_STATE_READY;
-  bool hasSeenSetupClient = false;
   bool lastStatusFetchSucceeded = false;
   bool lastUpdatePending = false;
   unsigned long lastSuccessfulSyncMs = 0;
@@ -416,9 +362,6 @@ void runWebServer(bool useAP) {
   while (true) {
     server.handleRequests();
     server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
-    if (WiFi.softAPgetStationNum() > 0) {
-      hasSeenSetupClient = true;
-    }
 
     if (server.isRefreshRequested()) {
       server.clearRefreshRequest();
@@ -467,9 +410,6 @@ void runWebServer(bool useAP) {
         if (configStorage.save(*appConfig)) {
           printf("Pairing complete. Assigned deviceId='%s'\n", appConfig->assignedDeviceId);
           server.setAccountLinkedStatus(true);
-          if (!hasShownAccountSuccess) {
-            accountSuccessPending = true;
-          }
           initialPromptAt = millis();
           ranInitialPromptRefresh = false;
           const auto refreshResult = refreshDisplayWithResult(true);
@@ -483,44 +423,11 @@ void runWebServer(bool useAP) {
       }
     }
 
-    if (WiFi.status() == WL_CONNECTED && !wifiSuccessPending &&
-        !hasShownWifiSuccess && !appConfig->hasAssignedDeviceId()) {
-      wifiSuccessPending = true;
-    }
-
-    if (wifiSuccessPending &&
-        lastRenderedSetupState != SETUP_STATE_WIFI_CONNECTED) {
-      showSetupStageScreen(SETUP_STATE_WIFI_CONNECTED);
-      lastRenderedSetupState = SETUP_STATE_WIFI_CONNECTED;
-      stageRenderedAt = millis();
-    } else if (accountSuccessPending &&
-               lastRenderedSetupState != SETUP_STATE_ACCOUNT_CONNECTED) {
-      showSetupStageScreen(SETUP_STATE_ACCOUNT_CONNECTED);
-      lastRenderedSetupState = SETUP_STATE_ACCOUNT_CONNECTED;
-      stageRenderedAt = millis();
-    } else {
-      const SetupUiState derivedStage =
-          getCurrentSetupStage(hasShownWifiSuccess, hasShownAccountSuccess,
-                               firstImageShown, hasSeenSetupClient);
-      if (derivedStage != SETUP_STATE_READY &&
-          derivedStage != lastRenderedSetupState) {
-        showSetupStageScreen(derivedStage);
-        lastRenderedSetupState = derivedStage;
-      }
-    }
-
-    if (wifiSuccessPending &&
-        millis() - stageRenderedAt >= STAGE_SUCCESS_HOLD_MS) {
-      wifiSuccessPending = false;
-      hasShownWifiSuccess = true;
-      lastRenderedSetupState = SETUP_STATE_READY;
-    }
-
-    if (accountSuccessPending &&
-        millis() - stageRenderedAt >= STAGE_SUCCESS_HOLD_MS) {
-      accountSuccessPending = false;
-      hasShownAccountSuccess = true;
-      lastRenderedSetupState = SETUP_STATE_READY;
+    const SetupUiState derivedStage = getCurrentSetupStage(firstImageShown);
+    if (derivedStage != SETUP_STATE_READY &&
+        derivedStage != lastRenderedSetupState) {
+      showSetupStageScreen(derivedStage);
+      lastRenderedSetupState = derivedStage;
     }
 
     const bool withinFastRefreshWindow =
