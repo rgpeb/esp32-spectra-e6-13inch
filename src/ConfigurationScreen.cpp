@@ -74,7 +74,9 @@ void ConfigurationScreen::drawQRCode(const String &payload, int x, int y,
   }
 }
 
-void ConfigurationScreen::render() {
+void ConfigurationScreen::render() { renderWithCommit(true); }
+
+void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
   Serial.println("Displaying setup screen");
 
   display.init(115200);
@@ -190,9 +192,13 @@ void ConfigurationScreen::render() {
       }
     }
 
-    display.display();
-    display.hibernate();
-    Serial.println("Setup screen rendered successfully");
+    if (commitUpdate) {
+      display.display();
+      display.hibernate();
+      Serial.println("Setup screen rendered successfully");
+    } else {
+      Serial.println("Setup screen staged (display commit deferred)");
+    }
     return;
   }
 
@@ -325,9 +331,13 @@ void ConfigurationScreen::render() {
     drawQRCode(qrPayload, qrCodeX, qrCodeY, qrCodeScale);
   }
 
-  display.display();
-  display.hibernate();
-  Serial.println("Setup screen rendered successfully");
+  if (commitUpdate) {
+    display.display();
+    display.hibernate();
+    Serial.println("Setup screen rendered successfully");
+  } else {
+    Serial.println("Setup screen staged (display commit deferred)");
+  }
 }
 
 int ConfigurationScreen::nextRefreshInSeconds() { return 600; }
