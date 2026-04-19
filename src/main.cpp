@@ -63,15 +63,20 @@ SetupUiState getCurrentSetupStage(bool hasShownWifiSuccess, bool hasShownAccount
     return hasSeenSetupClient ? SETUP_STATE_CONNECT_HOME_WIFI
                               : SETUP_STATE_WELCOME_JOIN_WIFI;
   }
+
   if (!appConfig->hasAssignedDeviceId()) {
-    return SETUP_STATE_WIFI_CONNECTED;
+    return hasShownWifiSuccess ? SETUP_STATE_CONNECT_ACCOUNT
+                               : SETUP_STATE_WIFI_CONNECTED;
   }
-  if (hasShownAccountSuccess) {
+
+  if (!hasShownAccountSuccess) {
     return SETUP_STATE_ACCOUNT_CONNECTED;
   }
+
   if (!hasDisplayedFirstImage) {
     return SETUP_STATE_WAITING_FIRST_PHOTO;
   }
+
   return SETUP_STATE_READY;
 }
 
@@ -394,6 +399,8 @@ void runWebServer(bool useAP) {
   bool firstImageShown = false;
   bool wifiSuccessPending = false;
   bool accountSuccessPending = false;
+  bool hasShownWifiSuccess = false;
+  bool hasShownAccountSuccess = false;
   bool ranInitialPromptRefresh = false;
   unsigned long initialPromptAt = millis();
   SetupUiState lastRenderedSetupState = SETUP_STATE_READY;
@@ -460,7 +467,9 @@ void runWebServer(bool useAP) {
         if (configStorage.save(*appConfig)) {
           printf("Pairing complete. Assigned deviceId='%s'\n", appConfig->assignedDeviceId);
           server.setAccountLinkedStatus(true);
-          accountSuccessPending = true;
+          if (!hasShownAccountSuccess) {
+            accountSuccessPending = true;
+          }
           initialPromptAt = millis();
           ranInitialPromptRefresh = false;
           const auto refreshResult = refreshDisplayWithResult(true);
@@ -475,7 +484,7 @@ void runWebServer(bool useAP) {
     }
 
     if (WiFi.status() == WL_CONNECTED && !wifiSuccessPending &&
-        !appConfig->hasAssignedDeviceId()) {
+        !hasShownWifiSuccess && !appConfig->hasAssignedDeviceId()) {
       wifiSuccessPending = true;
     }
 
@@ -491,7 +500,7 @@ void runWebServer(bool useAP) {
       stageRenderedAt = millis();
     } else {
       const SetupUiState derivedStage =
-          getCurrentSetupStage(wifiSuccessPending, accountSuccessPending,
+          getCurrentSetupStage(hasShownWifiSuccess, hasShownAccountSuccess,
                                firstImageShown, hasSeenSetupClient);
       if (derivedStage != SETUP_STATE_READY &&
           derivedStage != lastRenderedSetupState) {
@@ -503,12 +512,14 @@ void runWebServer(bool useAP) {
     if (wifiSuccessPending &&
         millis() - stageRenderedAt >= STAGE_SUCCESS_HOLD_MS) {
       wifiSuccessPending = false;
+      hasShownWifiSuccess = true;
       lastRenderedSetupState = SETUP_STATE_READY;
     }
 
     if (accountSuccessPending &&
         millis() - stageRenderedAt >= STAGE_SUCCESS_HOLD_MS) {
       accountSuccessPending = false;
+      hasShownAccountSuccess = true;
       lastRenderedSetupState = SETUP_STATE_READY;
     }
 
