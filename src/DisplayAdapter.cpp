@@ -10,6 +10,25 @@
 static const size_t FRAME_BUFFER_SIZE =
     (EPD_NATIVE_WIDTH * EPD_NATIVE_HEIGHT) / 2; // 960000 bytes
 
+namespace {
+uint8_t getPackedPixel(const uint8_t *buffer, uint16_t x, uint16_t y) {
+  const size_t index = ((size_t)y * EPD_NATIVE_WIDTH + x) / 2;
+  if ((x & 1) == 0) {
+    return (buffer[index] >> 4) & 0x0F;
+  }
+  return buffer[index] & 0x0F;
+}
+
+void setPackedPixel(uint8_t *buffer, uint16_t x, uint16_t y, uint8_t color) {
+  const size_t index = ((size_t)y * EPD_NATIVE_WIDTH + x) / 2;
+  if ((x & 1) == 0) {
+    buffer[index] = (buffer[index] & 0x0F) | ((color & 0x0F) << 4);
+  } else {
+    buffer[index] = (buffer[index] & 0xF0) | (color & 0x0F);
+  }
+}
+} // namespace
+
 DisplayAdapter::DisplayAdapter()
     : Adafruit_GFX(EPD_NATIVE_WIDTH, EPD_NATIVE_HEIGHT), _frameBuffer(nullptr),
       _initialized(false) {}
@@ -139,7 +158,8 @@ void DisplayAdapter::sendFrameBufferToDisplay() {
 }
 
 
-bool DisplayAdapter::loadNativeFrameBuffer(File &file, size_t expectedSize) {
+bool DisplayAdapter::loadNativeFrameBuffer(File &file, size_t expectedSize,
+                                           uint8_t rotationTurnsCW) {
   if (!_frameBuffer) {
     Serial.println("Binary render failed: framebuffer not initialized");
     return false;
@@ -175,7 +195,50 @@ bool DisplayAdapter::loadNativeFrameBuffer(File &file, size_t expectedSize) {
   }
 
   Serial.printf("Binary framebuffer loaded: %u bytes\n", (unsigned int)totalRead);
-  return totalRead == expectedSize;
+  if (totalRead != expectedSize) {
+    return false;
+  }
+
+  const uint8_t turns = rotationTurnsCW % 4;
+  if (turns == 0) {
+    return true;
+  }
+  if (turns == 1 || turns == 3) {
+    Serial.println(
+        "Binary render failed: 90/270 degree rotation unsupported for native binary (requires server-side remap).");
+    return false;
+  }
+
+  uint8_t *rotated = (uint8_t *)ps_malloc(FRAME_BUFFER_SIZE);
+  if (!rotated) {
+    Serial.println("Binary render failed: rotation buffer allocation failed");
+    return false;
+  }
+
+  memset(rotated, (WHITE << 4) | WHITE, FRAME_BUFFER_SIZE);
+
+  for (uint16_t y = 0; y < EPD_NATIVE_HEIGHT; ++y) {
+    for (uint16_t x = 0; x < EPD_NATIVE_WIDTH; ++x) {
+      const uint8_t color = getPackedPixel(_frameBuffer, x, y);
+      uint16_t dstX = x;
+      uint16_t dstY = y;
+
+      if (turns == 2) {
+        dstX = EPD_NATIVE_WIDTH - 1 - x;
+        dstY = EPD_NATIVE_HEIGHT - 1 - y;
+      }
+
+      if (dstX < EPD_NATIVE_WIDTH && dstY < EPD_NATIVE_HEIGHT) {
+        setPackedPixel(rotated, dstX, dstY, color);
+      }
+    }
+  }
+
+  memcpy(_frameBuffer, rotated, FRAME_BUFFER_SIZE);
+  free(rotated);
+  Serial.printf("Binary framebuffer rotated: %u quarter-turn(s) CW\n",
+                (unsigned int)turns);
+  return true;
 }
 
 void DisplayAdapter::display(bool partial_update_mode) {

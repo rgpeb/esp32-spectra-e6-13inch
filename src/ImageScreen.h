@@ -24,6 +24,7 @@ private:
     String assetUrl;
     String imageId;
     String photoName;
+    int rotationDegrees = 0;
     int httpCode = -1;
   };
 
@@ -43,7 +44,7 @@ private:
   bool isUpdateNeeded(const StatusMetadata &status) const;
   bool downloadBinaryToLittleFS(const String &url,
                                 const String &ifNoneMatch = "");
-  bool renderBinaryFromLittleFS();
+  bool renderBinaryFromLittleFS(const StatusMetadata &status);
   void persistStatusMetadata(const StatusMetadata &status);
   void persistAppliedState(const StatusMetadata &status);
 

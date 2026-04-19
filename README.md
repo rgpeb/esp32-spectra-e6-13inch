@@ -142,6 +142,18 @@ The original project by [shi-314](https://github.com/shi-314/esp32-spectra-e6) u
 3. **Dual-IC split** — on `display()`, the framebuffer is sent row-by-row: left 600px to CS0, right 600px to CS1.
 4. **Colour mapping** — uses 4-bit colour codes matching the manufacturer's constants (e.g., `BLACK = 0x00`, `WHITE = 0x11`, `RED = 0x33`).
 
+### Binary update contract (`/device/{id}/current.bin`)
+
+The binary update path (`ImageScreen`) expects a **native packed framebuffer**:
+
+- Exact size: **960,000 bytes** (`1200 × 1600 / 2`)
+- Packing: **2 pixels per byte** (`high nibble = even x`, `low nibble = odd x`)
+- Scan order: **row-major, top-to-bottom, left-to-right**
+- Colour nibbles: `0x0=black`, `0x1=white`, `0x2=yellow`, `0x3=red`, `0x5=blue`, `0x6=green`
+
+`status.json` may optionally include `rotationDegrees` (`0` or `180` supported on-device).  
+Landscape binaries (`90`/`270`) must be pre-rotated server-side into the native portrait layout before sending.
+
 ---
 
 ## Boot Flow

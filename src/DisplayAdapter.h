@@ -46,7 +46,11 @@ class DisplayAdapter : public Adafruit_GFX {
   void hibernate();
 
   // Binary-native render path (expects packed 4-bit pixel buffer).
-  bool loadNativeFrameBuffer(File &file, size_t expectedSize = (EPD_NATIVE_WIDTH * EPD_NATIVE_HEIGHT) / 2);
+  // rotationTurnsCW: 0=none, 1=90° CW, 2=180°, 3=270° CW
+  bool loadNativeFrameBuffer(
+      File &file,
+      size_t expectedSize = (EPD_NATIVE_WIDTH * EPD_NATIVE_HEIGHT) / 2,
+      uint8_t rotationTurnsCW = 0);
 
   // Adafruit_GFX required override
   void drawPixel(int16_t x, int16_t y, uint16_t color) override;

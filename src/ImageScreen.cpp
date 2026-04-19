@@ -148,12 +148,40 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
     status.etag = statusHeaderEtag;
   }
 
+  JsonVariantConst rotationVar = doc["rotationDegrees"];
+  if (rotationVar.is<int>()) {
+    status.rotationDegrees = rotationVar.as<int>();
+  } else if (rotationVar.is<const char *>()) {
+    status.rotationDegrees = atoi(rotationVar.as<const char *>());
+  } else {
+    JsonVariantConst orientationVar = doc["orientation"];
+    if (orientationVar.is<const char *>()) {
+      const String orientation = String(orientationVar.as<const char *>());
+      if (orientation.equalsIgnoreCase("portrait")) {
+        status.rotationDegrees = 0;
+      } else if (orientation.equalsIgnoreCase("portrait-180")) {
+        status.rotationDegrees = 180;
+      } else if (orientation.equalsIgnoreCase("landscape") ||
+                 orientation.equalsIgnoreCase("landscape-left")) {
+        status.rotationDegrees = 90;
+      } else if (orientation.equalsIgnoreCase("landscape-right")) {
+        status.rotationDegrees = 270;
+      }
+    }
+  }
+
+  while (status.rotationDegrees < 0) {
+    status.rotationDegrees += 360;
+  }
+  status.rotationDegrees %= 360;
+
   Serial.printf("Status parsed version int: %d\n", parsedVersionInt);
   Serial.println("Status parsed version string: '" + status.version + "'");
   Serial.println("Status parsed etag: '" + status.etag + "'");
   Serial.println("Status parsed assetUrl: '" + status.assetUrl + "'");
   Serial.println("Status parsed imageId: '" + status.imageId + "'");
   Serial.println("Status parsed photoName: '" + status.photoName + "'");
+  Serial.printf("Status parsed rotationDegrees: %d\n", status.rotationDegrees);
   return status;
 }
 
@@ -373,7 +401,7 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   return true;
 }
 
-bool ImageScreen::renderBinaryFromLittleFS() {
+bool ImageScreen::renderBinaryFromLittleFS(const StatusMetadata &status) {
   logBinaryPathStage(__func__, "render open read", kBinaryCachePath);
   Serial.println(String("Render start from ") + kBinaryCachePath);
   File in = LittleFS.open(kBinaryCachePath, FILE_READ);
@@ -387,7 +415,19 @@ bool ImageScreen::renderBinaryFromLittleFS() {
   display.setFullWindow();
 
   logBinaryPathStage(__func__, "decode framebuffer read", kBinaryCachePath);
-  const bool loaded = display.loadNativeFrameBuffer(in, kNativeBinarySize);
+  uint8_t rotationTurnsCW = 0;
+  if (status.rotationDegrees == 180) {
+    rotationTurnsCW = 2;
+  } else if (status.rotationDegrees == 90 || status.rotationDegrees == 270) {
+    Serial.printf(
+        "Render failure: unsupported rotationDegrees=%d for native 1200x1600 binary. Server must pre-rotate to portrait layout.\n",
+        status.rotationDegrees);
+    in.close();
+    return false;
+  }
+
+  const bool loaded = display.loadNativeFrameBuffer(in, kNativeBinarySize,
+                                                     rotationTurnsCW);
   in.close();
 
   if (!loaded) {
@@ -485,7 +525,7 @@ ImageScreen::RefreshResult ImageScreen::refresh() {
     return result;
   }
 
-  const bool rendered = renderBinaryFromLittleFS();
+  const bool rendered = renderBinaryFromLittleFS(status);
   if (rendered) {
     persistStatusMetadata(status);
     persistAppliedState(status);
