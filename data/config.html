@@ -130,9 +130,8 @@
     <h2>Setup progress</h2>
     <p id="stageText">Checking frame status…</p>
     <ol id="steps" class="steps">
-      <li data-step="welcome">Welcome / join frame WiFi</li>
-      <li data-step="connect-home-wifi">Open setup portal / enter home WiFi</li>
-      <li data-step="wifi-connected">Connected to WiFi</li>
+      <li data-step="welcome">Join Framey-Config / wait for setup portal</li>
+      <li data-step="connect-home-wifi">Enter home WiFi details</li>
       <li data-step="connect-account">Connect to your account</li>
       <li data-step="frame-ready">Account connected / ready</li>
     </ol>
@@ -213,7 +212,7 @@
     }
 
     function markSteps(activeKey) {
-      const progressOrder = ['welcome', 'connect-home-wifi', 'wifi-connected', 'connect-account', 'frame-ready'];
+      const progressOrder = ['welcome', 'connect-home-wifi', 'connect-account', 'frame-ready'];
       const activeIndex = progressOrder.indexOf(activeKey);
       stepsEl.querySelectorAll('li').forEach((li, index) => {
         li.classList.toggle('active', index <= activeIndex);
@@ -223,7 +222,7 @@
     }
 
     function updateAccountAction(stage) {
-      const canConnect = stage === 'wifi-connected' || stage === 'connect-account' || stage === 'frame-ready';
+      const canConnect = stage === 'connect-account' || stage === 'frame-ready';
       connectAccountButton.disabled = !canConnect;
       if (stage === 'frame-ready') {
         accountCardText.textContent = 'Account connected. Setup complete.';
@@ -254,9 +253,8 @@
 
     function paintStage(stage) {
       const map = {
-        'welcome': ['Welcome', 'Join the frame WiFi on your phone to begin setup.', 'welcome'],
-        'connect-home-wifi': ['Connect home WiFi', 'Open this page and enter your home WiFi details.', 'connect-home-wifi'],
-        'wifi-connected': ['Connected to WiFi', 'WiFi complete. Next required step: connect this frame to your account.', 'connect-account'],
+        'welcome': ['Welcome', 'Join Framey-Config on your phone and wait for the setup portal to appear. If it does not, scan the QR shown on the frame.', 'welcome'],
+        'connect-home-wifi': ['Connect home WiFi', 'Enter your home WiFi details in this setup page.', 'connect-home-wifi'],
         'connect-account': ['Connected to WiFi', 'Next required step: connect this frame to your account.', 'connect-account'],
         'frame-ready': ['Frame ready', 'Your frame is connected. Browse the library and choose a photo.', 'frame-ready']
       };
