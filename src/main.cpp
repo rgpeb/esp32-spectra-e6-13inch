@@ -12,6 +12,7 @@
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
 #include <esp_sleep.h>
+#include <vector>
 
 DisplayType display;
 ApplicationConfigStorage configStorage;
@@ -144,9 +145,14 @@ void showConnectHomeWifiScreen() {
   const String qrPayload = ConfigurationScreen::buildJoinWifiQrPayload(
       String(ConfigurationServer::WIFI_AP_NAME),
       String(ConfigurationServer::WIFI_AP_PASSWORD));
+  const std::vector<String> timelineEntries = {
+      "Connect your phone to Framey-Config.",
+      "Open the setup portal from the QR code.",
+      "Enter your home WiFi and save."};
   ConfigurationScreen setupScreen(
       display, qrPayload, "Connect this frame",
-      "Scan to join Framey-Config, then open the setup portal on your phone.");
+      "Scan to join Framey-Config, then open the setup portal on your phone.",
+      timelineEntries, 0, true);
   setupScreen.render();
   Serial.printf(
       "[Setup Stage] Home WiFi setup shown with AP join QR (ssid=%s)\n",
@@ -155,12 +161,16 @@ void showConnectHomeWifiScreen() {
 
 void showPairingSetupScreen() {
   const String portalUrl = getPortalUrlForCurrentNetwork();
+  const std::vector<String> timelineEntries = {
+      "Home WiFi connected.",
+      "Open this frame's portal from your phone.",
+      "Connect your account to complete setup."};
   if (portalUrl.length() > 0) {
     const String qrPayload =
         ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        "Scan this QR to open this frame on your WiFi.");
+        "Scan this QR to open this frame on your WiFi.", timelineEntries, 1, true);
     setupScreen.render();
     Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",
                   portalUrl.c_str());
@@ -168,16 +178,21 @@ void showPairingSetupScreen() {
     auto statusScreen = ConfigurationScreen::createStatusScreen(
         display, "Connect to your account",
         "Waiting for local network address.",
-        "Your router is still assigning an IP. This will refresh shortly.");
+        "Your router is still assigning an IP. This will refresh shortly.",
+        timelineEntries, 1, true);
     statusScreen.render();
     Serial.println("[Setup Stage] Pairing portal URL unavailable (no valid local IP yet).");
   }
 }
 
 void showWaitingForFirstPhotoScreen() {
+  const std::vector<String> timelineEntries = {
+      "Home WiFi connected.",
+      "Account connected to this frame.",
+      "Waiting for first photo selection."};
   auto statusScreen = ConfigurationScreen::createStatusScreen(
       display, "Frame ready", "Waiting for your first photo.",
-      "Browse the library and choose a photo.");
+      "Browse the library and choose a photo.", timelineEntries, 2, true);
   statusScreen.render();
   Serial.println("[Setup Stage] Waiting for first photo screen shown");
 }

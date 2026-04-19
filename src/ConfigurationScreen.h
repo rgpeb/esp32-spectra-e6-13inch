@@ -5,6 +5,7 @@
 #include <qrcode.h>
 
 #include <memory>
+#include <vector>
 
 #include "ApplicationConfig.h"
 #include "DisplayAdapter.h"
@@ -17,6 +18,9 @@ class ConfigurationScreen : public Screen {
   String titleText;
   String subtitleText;
   String helperText;
+  std::vector<String> timelineEntries;
+  uint8_t setupStepSlot;
+  bool appendOnlyMode;
   bool showQrCode;
   U8G2_FOR_ADAFRUIT_GFX gfx;
 
@@ -24,7 +28,9 @@ class ConfigurationScreen : public Screen {
 
  public:
   ConfigurationScreen(DisplayType& display, const String& qrPayload,
-                      const String& titleText, const String& subtitleText);
+                      const String& titleText, const String& subtitleText,
+                      const std::vector<String>& timelineEntries = {},
+                      uint8_t setupStepSlot = 0, bool appendOnlyMode = false);
   static String buildJoinWifiQrPayload(const String& ssid,
                                        const String& password);
   static String buildWiFiPortalQrPayload(const String& portalUrl);
@@ -32,7 +38,10 @@ class ConfigurationScreen : public Screen {
   static ConfigurationScreen createStatusScreen(DisplayType& display,
                                                 const String& titleText,
                                                 const String& subtitleText,
-                                                const String& helperText);
+                                                const String& helperText,
+                                                const std::vector<String>& timelineEntries = {},
+                                                uint8_t setupStepSlot = 0,
+                                                bool appendOnlyMode = false);
 
   void render() override;
   int nextRefreshInSeconds() override;
