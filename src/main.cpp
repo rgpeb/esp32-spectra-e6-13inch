@@ -512,7 +512,14 @@ void runWebServer(bool useAP) {
     const SetupUiState derivedStage = getCurrentSetupStage(firstImageShown);
     if (derivedStage != SETUP_STATE_READY &&
         derivedStage != lastRenderedSetupState) {
-      showSetupStageScreen(derivedStage);
+      if (derivedStage == SETUP_STATE_CONNECT_HOME_WIFI) {
+        // Batch Step 1 + Step 2 staging into a single display refresh
+        // to avoid a second e-paper flash on initial setup render.
+        showConnectHomeWifiScreen(false);
+        showPairingSetupScreen(true);
+      } else {
+        showSetupStageScreen(derivedStage);
+      }
       lastRenderedSetupState = derivedStage;
     }
 
