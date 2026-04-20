@@ -71,9 +71,6 @@ String getPortalUrlForCurrentNetwork() {
 
 SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
   if (WiFi.status() != WL_CONNECTED) {
-    if (WiFi.softAPgetStationNum() > 0) {
-      return SETUP_STATE_CONNECT_ACCOUNT;
-    }
     return SETUP_STATE_CONNECT_HOME_WIFI;
   }
 
@@ -169,22 +166,18 @@ void showConnectHomeWifiScreen(bool commitUpdate = true) {
 
 void showPairingSetupScreen(bool commitUpdate = true) {
   const bool onHomeWifi = WiFi.status() == WL_CONNECTED;
-  const bool hasApClient = WiFi.softAPgetStationNum() > 0;
-  const bool canShowPortalQr = onHomeWifi || hasApClient;
+  const bool canShowPortalQr = onHomeWifi;
   const String portalUrl = canShowPortalQr ? getPortalUrlForCurrentNetwork() : "";
   const std::vector<String> timelineEntries = {
-      onHomeWifi ? "Home WiFi connected."
-                 : "Phone connected to Framey-Config.",
+      "Home WiFi connected.",
       "Open this frame's portal from your phone.",
-      onHomeWifi ? "Connect your account to complete setup."
-                 : "Enter home WiFi details in the setup portal."};
+      "Connect your account to complete setup."};
   if (portalUrl.length() > 0) {
     const String qrPayload =
         ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        onHomeWifi ? "Scan this QR to open this frame on your WiFi."
-                   : "Step 2: scan this QR if the setup portal did not open automatically.",
+        "Scan this QR to open this frame on your WiFi.",
         timelineEntries, 1, true);
     setupScreen.renderWithCommit(commitUpdate);
     Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",
@@ -512,14 +505,7 @@ void runWebServer(bool useAP) {
     const SetupUiState derivedStage = getCurrentSetupStage(firstImageShown);
     if (derivedStage != SETUP_STATE_READY &&
         derivedStage != lastRenderedSetupState) {
-      if (derivedStage == SETUP_STATE_CONNECT_HOME_WIFI) {
-        // Batch Step 1 + Step 2 staging into a single display refresh
-        // to avoid a second e-paper flash on initial setup render.
-        showConnectHomeWifiScreen(false);
-        showPairingSetupScreen(true);
-      } else {
-        showSetupStageScreen(derivedStage);
-      }
+      showSetupStageScreen(derivedStage);
       lastRenderedSetupState = derivedStage;
     }
 
