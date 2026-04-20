@@ -31,9 +31,10 @@ constexpr const char *kFactoryResetByDevicePrefix = "/device/";
 constexpr const char *kFactoryResetByTokenPrefix = "/device/by-token/";
 enum SetupUiState : uint8_t {
   SETUP_STATE_CONNECT_HOME_WIFI = 0,
-  SETUP_STATE_CONNECT_ACCOUNT = 1,
-  SETUP_STATE_WAITING_FIRST_PHOTO = 2,
-  SETUP_STATE_READY = 3,
+  SETUP_STATE_OPEN_AP_PORTAL = 1,
+  SETUP_STATE_CONNECT_ACCOUNT = 2,
+  SETUP_STATE_WAITING_FIRST_PHOTO = 3,
+  SETUP_STATE_READY = 4,
 };
 
 String generatePairingToken() {
@@ -71,6 +72,9 @@ String getPortalUrlForCurrentNetwork() {
 
 SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
   if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.softAPgetStationNum() > 0) {
+      return SETUP_STATE_OPEN_AP_PORTAL;
+    }
     return SETUP_STATE_CONNECT_HOME_WIFI;
   }
 
@@ -151,12 +155,12 @@ void showConnectHomeWifiScreen(bool commitUpdate = true) {
       String(ConfigurationServer::WIFI_AP_NAME),
       String(ConfigurationServer::WIFI_AP_PASSWORD));
   const std::vector<String> timelineEntries = {
-      "Connect your phone to Framey-Config.",
-      "Open the setup portal from the QR code.",
-      "Enter your home WiFi and save."};
+      "Step 1: connect your phone to Framey-Config.",
+      "Step 2: open the Framey-Config portal QR.",
+      "Step 3: after WiFi save, switch your phone back to home WiFi."};
   ConfigurationScreen setupScreen(
       display, qrPayload, "Connect this frame",
-      "Scan to join Framey-Config, then open the setup portal on your phone.",
+      "Step 1: scan this QR to join Framey-Config on your phone.",
       timelineEntries, 0, true);
   setupScreen.renderWithCommit(commitUpdate);
   Serial.printf(
@@ -164,21 +168,49 @@ void showConnectHomeWifiScreen(bool commitUpdate = true) {
       ConfigurationServer::WIFI_AP_NAME);
 }
 
+void showOpenApPortalScreen(bool commitUpdate = true) {
+  const String apIp = WiFi.softAPIP().toString();
+  const String portalUrl = (apIp.length() > 0 && apIp != "0.0.0.0")
+                               ? "http://" + apIp + "/"
+                               : "";
+  const std::vector<String> timelineEntries = {
+      "Step 1 done: phone joined Framey-Config.",
+      "Step 2: scan this QR to open the setup portal.",
+      "Enter home WiFi, then switch phone back to home WiFi for Step 3."};
+  if (portalUrl.length() > 0) {
+    ConfigurationScreen setupScreen(
+        display, ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl),
+        "Open setup portal",
+        "Step 2: scan this QR to open Framey-Config portal.",
+        timelineEntries, 1, true);
+    setupScreen.renderWithCommit(commitUpdate);
+    Serial.printf("[Setup Stage] AP portal QR shown (url=%s)\n", portalUrl.c_str());
+  } else {
+    auto statusScreen = ConfigurationScreen::createStatusScreen(
+        display, "Open setup portal",
+        "Waiting for portal address.",
+        "Stay connected to Framey-Config. This will refresh shortly.",
+        timelineEntries, 1, true);
+    statusScreen.renderWithCommit(commitUpdate);
+    Serial.println("[Setup Stage] AP portal URL unavailable.");
+  }
+}
+
 void showPairingSetupScreen(bool commitUpdate = true) {
   const bool onHomeWifi = WiFi.status() == WL_CONNECTED;
   const bool canShowPortalQr = onHomeWifi;
   const String portalUrl = canShowPortalQr ? getPortalUrlForCurrentNetwork() : "";
   const std::vector<String> timelineEntries = {
-      "Home WiFi connected.",
-      "Open this frame's portal from your phone.",
+      "Step 2 done: home WiFi credentials were saved.",
+      "Step 3: switch phone to home WiFi, then scan this QR.",
       "Connect your account to complete setup."};
   if (portalUrl.length() > 0) {
     const String qrPayload =
         ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        "Scan this QR to open this frame on your WiFi.",
-        timelineEntries, 1, true);
+        "Step 3: on home WiFi, scan this QR to open this frame.",
+        timelineEntries, 2, true);
     setupScreen.renderWithCommit(commitUpdate);
     Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",
                   portalUrl.c_str());
@@ -186,8 +218,8 @@ void showPairingSetupScreen(bool commitUpdate = true) {
     auto statusScreen = ConfigurationScreen::createStatusScreen(
         display, "Connect to your account",
         "Waiting for local network address.",
-        "Your router is still assigning an IP. This will refresh shortly.",
-        timelineEntries, 1, true);
+        "Switch your phone to home WiFi now. This will refresh shortly.",
+        timelineEntries, 2, true);
     statusScreen.renderWithCommit(commitUpdate);
     Serial.println("[Setup Stage] Pairing portal URL unavailable (no valid local IP yet).");
   }
@@ -200,7 +232,7 @@ void showWaitingForFirstPhotoScreen() {
       "Waiting for first photo selection."};
   auto statusScreen = ConfigurationScreen::createStatusScreen(
       display, "Frame ready", "Waiting for your first photo.",
-      "Browse the library and choose a photo.", timelineEntries, 2, true);
+      "Browse the library and choose a photo.", timelineEntries, 3, true);
   statusScreen.render();
   Serial.println("[Setup Stage] Waiting for first photo screen shown");
 }
@@ -209,6 +241,9 @@ void showSetupStageScreen(SetupUiState stage) {
   switch (stage) {
   case SETUP_STATE_CONNECT_HOME_WIFI:
     showConnectHomeWifiScreen();
+    break;
+  case SETUP_STATE_OPEN_AP_PORTAL:
+    showOpenApPortalScreen();
     break;
   case SETUP_STATE_CONNECT_ACCOUNT:
     showPairingSetupScreen();

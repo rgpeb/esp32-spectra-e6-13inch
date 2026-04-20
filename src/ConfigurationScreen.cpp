@@ -133,7 +133,7 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
     gfx.setForegroundColor(GxEPD_BLACK);
     gfx.setFont(u8g2_font_helvB18_tr);
     gfx.setCursor(stepX + 18, stepY + 40);
-    gfx.print(String("Step ") + String(min((uint8_t)3, (uint8_t)(setupStepSlot + 1))));
+    gfx.print(String("Step ") + String(setupStepSlot + 1));
     gfx.setFont(u8g2_font_helvR14_tr);
     std::vector<String> titleLines = wrapText(titleText, 52);
     int textY = stepY + 78;
