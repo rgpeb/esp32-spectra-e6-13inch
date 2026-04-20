@@ -115,7 +115,7 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
     const int stepWidth = screenWidth - 36;
     const int slotGap = 18;
     const size_t slotCount =
-        max(static_cast<size_t>(1), static_cast<size_t>(setupStepSlot + 1));
+        max(static_cast<size_t>(3), timelineEntries.size());
     const int stepHeight =
         max(220, (stepAreaHeight - (static_cast<int>(slotCount) - 1) * slotGap) /
                      static_cast<int>(slotCount));
