@@ -254,6 +254,19 @@ void showWaitingForFirstPhotoScreen() {
   Serial.println("[Setup Stage] Waiting for first photo screen shown");
 }
 
+void showSetupCompleteScreen() {
+  const std::vector<String> timelineEntries = {
+      "Home WiFi connected.",
+      "Account connected to this frame.",
+      "Setup complete."};
+  auto statusScreen = ConfigurationScreen::createStatusScreen(
+      display, "Congrats!", "Setup complete.",
+      "Your frame is connected and ready to display photos.",
+      timelineEntries, 3, true);
+  statusScreen.render();
+  Serial.println("[Setup Stage] Setup complete screen shown");
+}
+
 void showSetupStageScreen(SetupUiState stage) {
   switch (stage) {
   case SETUP_STATE_CONNECT_HOME_WIFI:
@@ -269,6 +282,8 @@ void showSetupStageScreen(SetupUiState stage) {
     showWaitingForFirstPhotoScreen();
     break;
   case SETUP_STATE_READY:
+    showSetupCompleteScreen();
+    break;
   default:
     break;
   }
@@ -555,8 +570,7 @@ void runWebServer(bool useAP) {
     }
 
     const SetupUiState derivedStage = getCurrentSetupStage(firstImageShown);
-    if (derivedStage != SETUP_STATE_READY &&
-        derivedStage != lastRenderedSetupState) {
+    if (derivedStage != lastRenderedSetupState) {
       showSetupStageScreen(derivedStage);
       lastRenderedSetupState = derivedStage;
     }
