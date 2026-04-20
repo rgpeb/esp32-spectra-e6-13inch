@@ -44,8 +44,29 @@
       font-weight: 700;
       margin-bottom: 8px;
     }
-    .steps { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
-    .steps li { margin: 6px 0; }
+    .steps {
+      margin: 12px 0 0;
+      padding-left: 0;
+      list-style-position: inside;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 100vh;
+    }
+    .steps li {
+      margin: 0;
+      min-height: calc((100vh - 20px) / 3);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      padding: 16px;
+      display: flex;
+      align-items: flex-start;
+    }
+    .steps li.pending {
+      visibility: hidden;
+    }
     .steps li.active { color: var(--ink); font-weight: 700; }
     .steps li.done { color: var(--ok); font-weight: 700; }
     .steps li.current {
@@ -151,9 +172,9 @@
       <h2>Setup progress</h2>
       <p id="stageText">Checking frame status…</p>
       <ol id="steps" class="steps">
-        <li data-step="welcome">Join Framey-Config (QR 1)</li>
-        <li data-step="connect-home-wifi">Open setup portal + save WiFi (QR 2)</li>
-        <li data-step="connect-account">Switch phone to home WiFi, then connect account (QR 3)</li>
+        <li data-step="welcome">Join Framey-Config (QR 1).</li>
+        <li data-step="connect-home-wifi">Open Setup Portal + Save WiFi (QR 2).</li>
+        <li data-step="connect-account">Switch Phone to Home WiFi, Then Connect Account (QR 3).</li>
       </ol>
     </div>
 
@@ -250,7 +271,7 @@
       const activeIndex = progressOrder.indexOf(activeKey);
       stepsEl.querySelectorAll('li').forEach((li, index) => {
         const visible = activeIndex >= 0 && index <= activeIndex;
-        li.classList.toggle('hidden', !visible);
+        li.classList.toggle('pending', !visible);
         li.classList.toggle('active', index <= activeIndex);
         li.classList.toggle('done', index < activeIndex);
         li.classList.toggle('current', index === activeIndex);
