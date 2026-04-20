@@ -198,30 +198,47 @@ void showOpenApPortalScreen(bool commitUpdate = true) {
 
 void showPairingSetupScreen(bool commitUpdate = true) {
   const bool onHomeWifi = WiFi.status() == WL_CONNECTED;
-  const bool canShowPortalQr = onHomeWifi;
-  const String portalUrl = canShowPortalQr ? getPortalUrlForCurrentNetwork() : "";
+  const bool hasPairingToken = appConfig && appConfig->hasPairingToken();
+  const String directPairingUrl =
+      hasPairingToken
+          ? String(PAIRING_PAGE_BASE_URL) + "?token=" + String(appConfig->pairingToken)
+          : "";
+  const String portalUrl = onHomeWifi ? getPortalUrlForCurrentNetwork() : "";
+  const bool canShowDirectPairingQr = onHomeWifi && directPairingUrl.length() > 0;
+  const bool canShowPortalFallbackQr = onHomeWifi && portalUrl.length() > 0;
   const std::vector<String> timelineEntries = {
       "Step 2 done: home WiFi credentials were saved.",
       "Step 3: switch phone to home WiFi, then scan this QR.",
-      "Connect your account to complete setup."};
-  if (portalUrl.length() > 0) {
+      "You'll go straight to account connection."};
+  if (canShowDirectPairingQr) {
+    const String qrPayload =
+        ConfigurationScreen::buildPairingQrPayload(directPairingUrl);
+    ConfigurationScreen setupScreen(
+        display, qrPayload, "Connect to your account",
+        "Step 3: on home WiFi, scan this QR to connect your account.",
+        timelineEntries, 2, true);
+    setupScreen.renderWithCommit(commitUpdate);
+    Serial.printf("[Setup Stage] Direct pairing QR shown (url=%s)\n",
+                  directPairingUrl.c_str());
+  } else if (canShowPortalFallbackQr) {
     const String qrPayload =
         ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        "Step 3: on home WiFi, scan this QR to open this frame.",
+        "Step 3: scan this QR, then tap Connect account in portal.",
         timelineEntries, 2, true);
     setupScreen.renderWithCommit(commitUpdate);
-    Serial.printf("[Setup Stage] Pairing portal QR shown (url=%s)\n",
+    Serial.printf("[Setup Stage] Pairing fallback portal QR shown (url=%s)\n",
                   portalUrl.c_str());
   } else {
     auto statusScreen = ConfigurationScreen::createStatusScreen(
         display, "Connect to your account",
-        "Waiting for local network address.",
+        "Waiting for pairing link.",
         "Switch your phone to home WiFi now. This will refresh shortly.",
         timelineEntries, 2, true);
     statusScreen.renderWithCommit(commitUpdate);
-    Serial.println("[Setup Stage] Pairing portal URL unavailable (no valid local IP yet).");
+    Serial.println(
+        "[Setup Stage] Pairing link unavailable (no token or local URL yet).");
   }
 }
 
