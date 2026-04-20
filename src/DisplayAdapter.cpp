@@ -242,16 +242,13 @@ bool DisplayAdapter::loadNativeFrameBuffer(File &file, size_t expectedSize,
 }
 
 void DisplayAdapter::display(bool partial_update_mode) {
-  printf("DisplayAdapter::display() started... \r\n");
   if (partial_update_mode) {
     Serial.println(
         "DisplayAdapter: partial update requested, forcing full refresh.");
   }
   sendFrameBufferToDisplay();
 
-  printf("Triggering e-paper refresh (this takes ~20 seconds)... \r\n");
   epdDisplay();
-  printf("Display refresh complete. \r\n");
 }
 
 void DisplayAdapter::hibernate() {
