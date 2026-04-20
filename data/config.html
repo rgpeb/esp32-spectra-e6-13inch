@@ -44,8 +44,25 @@
       font-weight: 700;
       margin-bottom: 8px;
     }
-    .steps { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
-    .steps li { margin: 6px 0; }
+    .steps {
+      margin: 12px 0 0;
+      padding-left: 0;
+      list-style-position: inside;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .steps li {
+      margin: 0;
+      min-height: calc((100vh - 20px) / 3);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      padding: 16px;
+      display: flex;
+      align-items: flex-start;
+    }
     .steps li.active { color: var(--ink); font-weight: 700; }
     .steps li.done { color: var(--ok); font-weight: 700; }
     .steps li.current {
