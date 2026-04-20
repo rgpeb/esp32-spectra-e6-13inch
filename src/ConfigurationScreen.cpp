@@ -109,10 +109,17 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
   if (appendOnlyMode) {
     const int headerHeight = 138;
     const int stepAreaTop = 154;
-    const int stepHeight = screenHeight - stepAreaTop - 24;
-    const int stepY = stepAreaTop;
+    const int stepAreaBottomMargin = 24;
+    const int stepAreaHeight = screenHeight - stepAreaTop - stepAreaBottomMargin;
     const int stepX = 18;
     const int stepWidth = screenWidth - 36;
+    const int slotGap = 18;
+    const size_t slotCount = max(
+        static_cast<size_t>(3),
+        max(timelineEntries.size(), static_cast<size_t>(setupStepSlot + 1)));
+    const int stepHeight =
+        max(220, (stepAreaHeight - (static_cast<int>(slotCount) - 1) * slotGap) /
+                     static_cast<int>(slotCount));
 
     display.setFullWindow();
     display.fillScreen(GxEPD_WHITE);
@@ -128,44 +135,73 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
     gfx.print("Frame setup");
     // Intentionally no top-right status box in header (keeps header clean).
 
-    display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
-    gfx.setBackgroundColor(GxEPD_WHITE);
-    gfx.setForegroundColor(GxEPD_BLACK);
-    gfx.setFont(u8g2_font_helvB18_tr);
-    gfx.setCursor(stepX + 18, stepY + 40);
-    gfx.print(String("Step ") + String(setupStepSlot + 1));
-    gfx.setFont(u8g2_font_helvR14_tr);
-    std::vector<String> titleLines = wrapText(titleText, 52);
-    int textY = stepY + 78;
-    for (const String &line : titleLines) {
-      gfx.setCursor(stepX + 18, textY);
-      gfx.print(line);
-      textY += 26;
-    }
+    for (size_t slotIndex = 0; slotIndex < slotCount; ++slotIndex) {
+      const int stepY = stepAreaTop + static_cast<int>(slotIndex) * (stepHeight + slotGap);
+      const bool isActiveSlot = slotIndex == setupStepSlot;
 
-    std::vector<String> subtitleLines = wrapText(subtitleText, 64);
-    for (const String &line : subtitleLines) {
-      gfx.setCursor(stepX + 18, textY);
-      gfx.print(line);
-      textY += 23;
-    }
+      display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
+      gfx.setBackgroundColor(GxEPD_WHITE);
+      gfx.setForegroundColor(GxEPD_BLACK);
 
-    if (showQrCode) {
-      const int qrScale = 4;
-      const int qrPixelSize = 57 * qrScale;
-      const int qrQuietZone = 8;
-      const int qrBgSize = qrPixelSize + (2 * qrQuietZone);
-      const int qrBgX = stepX + stepWidth - qrBgSize - 16;
-      const int qrBgY = stepY + 14;
-      display.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize, GxEPD_WHITE);
-      display.drawRect(qrBgX - 3, qrBgY - 3, qrBgSize + 6, qrBgSize + 6, GxEPD_GREEN);
-      drawQRCode(qrPayload, qrBgX + qrQuietZone, qrBgY + qrQuietZone, qrScale);
-    } else {
-      std::vector<String> helperLines = wrapText(helperText, 64);
-      for (const String &line : helperLines) {
-        gfx.setCursor(stepX + 18, textY);
-        gfx.print(line);
-        textY += 23;
+      gfx.setFont(u8g2_font_helvB18_tr);
+      gfx.setCursor(stepX + 18, stepY + 42);
+      gfx.print(String("Step ") + String(slotIndex + 1));
+
+      int textY = stepY + 78;
+      if (isActiveSlot) {
+        gfx.setFont(u8g2_font_helvR14_tr);
+        std::vector<String> titleLines = wrapText(titleText, 52);
+        for (const String &line : titleLines) {
+          gfx.setCursor(stepX + 18, textY);
+          gfx.print(line);
+          textY += 26;
+        }
+
+        std::vector<String> subtitleLines = wrapText(subtitleText, 64);
+        for (const String &line : subtitleLines) {
+          gfx.setCursor(stepX + 18, textY);
+          gfx.print(line);
+          textY += 23;
+        }
+
+        if (showQrCode) {
+          const int qrQuietZone = 8;
+          const int maxQrScaleFromWidth = max(2, (stepWidth - 60) / 57);
+          const int maxQrScaleFromHeight = max(2, (stepHeight - 40) / 57);
+          const int qrScale = min(4, min(maxQrScaleFromWidth, maxQrScaleFromHeight));
+          const int qrPixelSize = 57 * qrScale;
+          const int qrBgSize = qrPixelSize + (2 * qrQuietZone);
+          const int qrBgX = stepX + stepWidth - qrBgSize - 16;
+          const int qrBgY = stepY + (stepHeight - qrBgSize) / 2;
+          display.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize, GxEPD_WHITE);
+          display.drawRect(qrBgX - 3, qrBgY - 3, qrBgSize + 6, qrBgSize + 6, GxEPD_GREEN);
+          drawQRCode(qrPayload, qrBgX + qrQuietZone, qrBgY + qrQuietZone, qrScale);
+        } else {
+          std::vector<String> helperLines = wrapText(helperText, 64);
+          for (const String &line : helperLines) {
+            gfx.setCursor(stepX + 18, textY);
+            gfx.print(line);
+            textY += 23;
+            if (textY > stepY + stepHeight - 20) {
+              break;
+            }
+          }
+        }
+      } else {
+        const String slotText =
+            (slotIndex < timelineEntries.size() && timelineEntries[slotIndex].length() > 0)
+                ? timelineEntries[slotIndex]
+                : (slotIndex < setupStepSlot ? "Completed." : "Pending.");
+        gfx.setFont(u8g2_font_helvR14_tr);
+        std::vector<String> slotLines = wrapText(slotText, 64);
+        for (const String &line : slotLines) {
+          gfx.setCursor(stepX + 18, textY);
+          gfx.print(line);
+          textY += 23;
+          if (textY > stepY + stepHeight - 20) {
+            break;
+          }
+        }
       }
     }
 
