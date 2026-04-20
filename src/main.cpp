@@ -156,7 +156,7 @@ void showConnectHomeWifiScreen(bool commitUpdate = true) {
       String(ConfigurationServer::WIFI_AP_PASSWORD));
   const std::vector<String> timelineEntries = {
       "Step 1: Connect your phone to Framey-Config.",
-      "Step 2: Open the Framey-Config portal QR.",
+      "Step 2: Scan QR to connect frame to your home network.",
       "Step 3: After WiFi save, switch your phone back to home WiFi."};
   ConfigurationScreen setupScreen(
       display, qrPayload, "Connect this frame",
@@ -175,13 +175,13 @@ void showOpenApPortalScreen(bool commitUpdate = true) {
                                : "";
   const std::vector<String> timelineEntries = {
       "Step 1 done: Phone joined Framey-Config.",
-      "Step 2: Scan this QR to open the setup portal.",
+      "Step 2: Scan QR to connect frame to your home network.",
       "Enter home WiFi, then switch phone back to home WiFi for Step 3."};
   if (portalUrl.length() > 0) {
     ConfigurationScreen setupScreen(
         display, ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl),
         "Open setup portal",
-        "Step 2: Scan this QR to open Framey-Config portal.",
+        "Step 2: Scan QR to connect frame to your home network.",
         timelineEntries, 1, true);
     setupScreen.renderWithCommit(commitUpdate);
     Serial.printf("[Setup Stage] AP portal QR shown (url=%s)\n", portalUrl.c_str());
@@ -208,14 +208,14 @@ void showPairingSetupScreen(bool commitUpdate = true) {
   const bool canShowPortalFallbackQr = onHomeWifi && portalUrl.length() > 0;
   const std::vector<String> timelineEntries = {
       "Step 2 done: Home WiFi credentials were saved.",
-      "Step 3: Switch phone to home WiFi, then scan this QR.",
-      "You'll go straight to account connection."};
+      "Step 3: Switch phone to home WiFi, then scan QR to open account link.",
+      "Open the account link and connect this frame."};
   if (canShowDirectPairingQr) {
     const String qrPayload =
         ConfigurationScreen::buildPairingQrPayload(directPairingUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        "Step 3: On home WiFi, scan this QR to connect your account.",
+        "Step 3: On home WiFi, scan QR to open the account link for this frame.",
         timelineEntries, 2, true);
     setupScreen.renderWithCommit(commitUpdate);
     Serial.printf("[Setup Stage] Direct pairing QR shown (url=%s)\n",
@@ -225,7 +225,7 @@ void showPairingSetupScreen(bool commitUpdate = true) {
         ConfigurationScreen::buildWiFiPortalQrPayload(portalUrl);
     ConfigurationScreen setupScreen(
         display, qrPayload, "Connect to your account",
-        "Step 3: Scan this QR, then tap Connect account in portal.",
+        "Step 3: Scan QR to open the account link, then connect this frame.",
         timelineEntries, 2, true);
     setupScreen.renderWithCommit(commitUpdate);
     Serial.printf("[Setup Stage] Pairing fallback portal QR shown (url=%s)\n",

@@ -136,6 +136,9 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
 
     for (size_t slotIndex = 0; slotIndex < slotCount; ++slotIndex) {
       const int stepY = stepAreaTop + static_cast<int>(slotIndex) * (stepHeight + slotGap);
+      if (slotIndex > setupStepSlot) {
+        continue;
+      }
       const bool isActiveSlot = slotIndex == setupStepSlot;
 
       display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
@@ -190,7 +193,7 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
         const String slotText =
             (slotIndex < timelineEntries.size() && timelineEntries[slotIndex].length() > 0)
                 ? timelineEntries[slotIndex]
-                : (slotIndex < setupStepSlot ? "Completed." : "Pending.");
+                : "Completed.";
         gfx.setFont(u8g2_font_helvR14_tr);
         std::vector<String> slotLines = wrapText(slotText, 64);
         for (const String &line : slotLines) {
