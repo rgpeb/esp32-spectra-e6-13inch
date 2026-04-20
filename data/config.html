@@ -119,68 +119,99 @@
       text-align: right;
       word-break: break-word;
     }
+    .hidden { display: none !important; }
+    .complete-page {
+      min-height: calc(100vh - 56px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .complete-card {
+      max-width: 620px;
+      text-align: center;
+      padding: 28px 22px;
+    }
+    .complete-card h1 {
+      font-size: 2.4rem;
+      margin-bottom: 14px;
+    }
+    .complete-card p {
+      font-size: 1.1rem;
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
-  <h1>Welcome</h1>
-  <p>Let’s finish setup so your frame can start showing photos.</p>
+  <div id="setupFlow">
+    <h1>Welcome</h1>
+    <p>Let’s finish setup so your frame can start showing photos.</p>
 
-  <div class="card">
-    <span id="stageBadge" class="pill">{{STATUS_BADGE}}</span>
-    <h2>Setup progress</h2>
-    <p id="stageText">Checking frame status…</p>
-    <ol id="steps" class="steps">
-      <li data-step="welcome">Join Framey-Config (QR 1)</li>
-      <li data-step="connect-home-wifi">Open setup portal + save WiFi (QR 2)</li>
-      <li data-step="connect-account">Switch phone to home WiFi, then connect account (QR 3)</li>
-      <li data-step="frame-ready">Account connected / ready</li>
-    </ol>
-  </div>
-
-  <form id="configForm" class="card">
-    <h2>Connect this frame to the internet</h2>
-    <p>Step 1 of 2: Enter your home WiFi details in this setup page.</p>
-
-    <label for="ssid">WiFi name</label>
-    <input id="ssid" name="ssid" type="text" value="{{CURRENT_SSID}}" required />
-
-    <label for="password">WiFi password</label>
-    <input id="password" name="password" type="password" value="{{CURRENT_PASSWORD}}" required />
-
-    <label for="powerMode">Power mode</label>
-    <select id="powerMode" name="powerMode">
-      <option value="0" {{POWER_SEL_SLEEP}}>Normal sleep</option>
-      <option value="1" {{POWER_SEL_AWAKE}}>Always awake</option>
-    </select>
-
-    <button type="submit">Save and connect</button>
-  </form>
-
-  <div id="accountCard" class="card action-card">
-    <h2>Step 2 of 2: Connect frame to account</h2>
-    <p id="accountCardText">Finish WiFi first, then connect this frame to your account.</p>
-    <button id="connectAccountButton" type="button" class="primary-action" disabled>Connect to Account</button>
-  </div>
-
-  <div class="card">
-    <h2>Frame Status</h2>
-    <div class="status-list">
-      <div class="status-row"><span class="status-label">Frame Name</span><span id="frameNameValue" class="status-value">—</span></div>
-      <div class="status-row"><span class="status-label">Account</span><span id="accountStatusValue" class="status-value">—</span></div>
-      <div class="status-row"><span class="status-label">WiFi</span><span id="wifiStatusValue" class="status-value">—</span></div>
-      <div class="status-row"><span class="status-label">Device ID</span><span id="deviceIdValue" class="status-value">—</span></div>
-      <div class="status-row"><span class="status-label">Displayed Photo</span><span id="displayedPhotoValue" class="status-value">—</span></div>
-      <div class="status-row"><span class="status-label">Version</span><span id="versionValue" class="status-value">—</span></div>
-      <div class="status-row"><span class="status-label">Last Synced</span><span id="lastSyncedValue" class="status-value">—</span></div>
-      <div class="status-row"><span class="status-label">Frame Status</span><span id="frameStatusValue" class="status-value">Not connected</span></div>
+    <div class="card">
+      <span id="stageBadge" class="pill">{{STATUS_BADGE}}</span>
+      <h2>Setup progress</h2>
+      <p id="stageText">Checking frame status…</p>
+      <ol id="steps" class="steps">
+        <li data-step="welcome">Join Framey-Config (QR 1)</li>
+        <li data-step="connect-home-wifi">Open setup portal + save WiFi (QR 2)</li>
+        <li data-step="connect-account">Switch phone to home WiFi, then connect account (QR 3)</li>
+      </ol>
     </div>
-    <p class="small">Manual link (if button does not open): <a id="pairingLink" href="{{PAIRING_URL}}">{{PAIRING_URL}}</a></p>
+
+    <form id="configForm" class="card">
+      <h2>Connect this frame to the internet</h2>
+      <p>Step 1 of 2: Enter your home WiFi details in this setup page.</p>
+
+      <label for="ssid">WiFi name</label>
+      <input id="ssid" name="ssid" type="text" value="{{CURRENT_SSID}}" required />
+
+      <label for="password">WiFi password</label>
+      <input id="password" name="password" type="password" value="{{CURRENT_PASSWORD}}" required />
+
+      <label for="powerMode">Power mode</label>
+      <select id="powerMode" name="powerMode">
+        <option value="0" {{POWER_SEL_SLEEP}}>Normal sleep</option>
+        <option value="1" {{POWER_SEL_AWAKE}}>Always awake</option>
+      </select>
+
+      <button type="submit">Save and connect</button>
+    </form>
+
+    <div id="accountCard" class="card action-card">
+      <h2>Step 2 of 2: Connect frame to account</h2>
+      <p id="accountCardText">Finish WiFi first, then connect this frame to your account.</p>
+      <button id="connectAccountButton" type="button" class="primary-action" disabled>Connect to Account</button>
+    </div>
+
+    <div class="card">
+      <h2>Frame Status</h2>
+      <div class="status-list">
+        <div class="status-row"><span class="status-label">Frame Name</span><span id="frameNameValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Account</span><span id="accountStatusValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">WiFi</span><span id="wifiStatusValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Device ID</span><span id="deviceIdValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Displayed Photo</span><span id="displayedPhotoValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Version</span><span id="versionValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Last Synced</span><span id="lastSyncedValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Frame Status</span><span id="frameStatusValue" class="status-value">Not connected</span></div>
+      </div>
+      <p class="small">Manual link (if button does not open): <a id="pairingLink" href="{{PAIRING_URL}}">{{PAIRING_URL}}</a></p>
+    </div>
+
+    <div class="card grid">
+      <button id="refreshNowButton" type="button">Refresh Now</button>
+      <button id="forgetWifiButton" type="button" class="secondary">Forget WiFi</button>
+      <button id="factoryResetButton" type="button" class="danger">Factory Reset / Reset Frame Setup</button>
+    </div>
   </div>
 
-  <div class="card grid">
-    <button id="refreshNowButton" type="button">Refresh Now</button>
-    <button id="forgetWifiButton" type="button" class="secondary">Forget WiFi</button>
-    <button id="factoryResetButton" type="button" class="danger">Factory Reset / Reset Frame Setup</button>
+  <div id="setupCompletePage" class="complete-page hidden">
+    <div class="card complete-card">
+      <span class="pill">Setup complete</span>
+      <h1>Congrats 🎉</h1>
+      <p>Your frame is linked and ready.</p>
+      <p>Open the library to choose a photo for this frame.</p>
+      <button id="openLibraryButton" type="button" class="primary-action">Go to Library</button>
+    </div>
   </div>
 
   <div id="status" class="status"></div>
@@ -197,6 +228,9 @@
     const accountCardText = document.getElementById('accountCardText');
     const connectAccountButton = document.getElementById('connectAccountButton');
     const pairingLink = document.getElementById('pairingLink');
+    const setupFlow = document.getElementById('setupFlow');
+    const setupCompletePage = document.getElementById('setupCompletePage');
+    const openLibraryButton = document.getElementById('openLibraryButton');
     const frameNameValue = document.getElementById('frameNameValue');
     const accountStatusValue = document.getElementById('accountStatusValue');
     const wifiStatusValue = document.getElementById('wifiStatusValue');
@@ -212,13 +246,20 @@
     }
 
     function markSteps(activeKey) {
-      const progressOrder = ['welcome', 'connect-home-wifi', 'connect-account', 'frame-ready'];
+      const progressOrder = ['welcome', 'connect-home-wifi', 'connect-account'];
       const activeIndex = progressOrder.indexOf(activeKey);
       stepsEl.querySelectorAll('li').forEach((li, index) => {
+        const visible = activeIndex >= 0 && index <= activeIndex;
+        li.classList.toggle('hidden', !visible);
         li.classList.toggle('active', index <= activeIndex);
         li.classList.toggle('done', index < activeIndex);
         li.classList.toggle('current', index === activeIndex);
       });
+    }
+
+    function showSetupCompletePage(show) {
+      setupFlow.classList.toggle('hidden', show);
+      setupCompletePage.classList.toggle('hidden', !show);
     }
 
     function updateAccountAction(stage) {
@@ -256,13 +297,14 @@
         'welcome': ['Step 1', 'Join Framey-Config on your phone (QR 1).', 'welcome'],
         'connect-home-wifi': ['Step 2', 'Open the setup portal (QR 2), save home WiFi, then switch your phone back to home WiFi.', 'connect-home-wifi'],
         'connect-account': ['Step 3', 'On home WiFi, open this frame portal (QR 3) and connect your account.', 'connect-account'],
-        'frame-ready': ['Frame ready', 'Your frame is connected. Browse the library and choose a photo.', 'frame-ready']
+        'frame-ready': ['Frame ready', 'Your frame is connected. Browse the library and choose a photo.', 'connect-account']
       };
       const [badge, text, step] = map[stage] || map['welcome'];
       stageBadge.textContent = badge;
       stageText.textContent = text;
       markSteps(step);
       updateAccountAction(stage);
+      showSetupCompletePage(stage === 'frame-ready');
     }
 
     async function refreshSetupStatus() {
@@ -315,6 +357,9 @@
     });
 
     connectAccountButton.addEventListener('click', () => {
+      window.location.href = pairingLink.href;
+    });
+    openLibraryButton.addEventListener('click', () => {
       window.location.href = pairingLink.href;
     });
 
