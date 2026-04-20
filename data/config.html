@@ -159,7 +159,7 @@
 
     <form id="configForm" class="card">
       <h2>Connect this frame to the internet</h2>
-      <p>Step 1 of 2: Enter your home WiFi details in this setup page.</p>
+      <p>Enter your home WiFi details in this setup page.</p>
 
       <label for="ssid">WiFi name</label>
       <input id="ssid" name="ssid" type="text" value="{{CURRENT_SSID}}" required />
@@ -174,10 +174,11 @@
       </select>
 
       <button type="submit">Save and connect</button>
+      <div id="status" class="status"></div>
     </form>
 
     <div id="accountCard" class="card action-card">
-      <h2>Step 2 of 2: Connect frame to account</h2>
+      <h2>Connect frame to account</h2>
       <p id="accountCardText">Finish WiFi first, then connect this frame to your account.</p>
       <button id="connectAccountButton" type="button" class="primary-action" disabled>Connect to Account</button>
     </div>
@@ -214,7 +215,6 @@
     </div>
   </div>
 
-  <div id="status" class="status"></div>
 
   <script>
     const statusEl = document.getElementById('status');
