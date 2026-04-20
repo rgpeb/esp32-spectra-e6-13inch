@@ -23,7 +23,8 @@ constexpr unsigned long SERVER_LOOP_DELAY_MS = 10;
 constexpr unsigned long AWAKE_AUTO_REFRESH_MS = 5UL * 60UL * 1000UL;
 constexpr unsigned long PAIRING_POLL_INTERVAL_MS = 5000UL;
 constexpr unsigned long INITIAL_FAST_REFRESH_INTERVAL_MS = 10000UL;
-constexpr unsigned long INITIAL_FAST_REFRESH_WINDOW_MS = 90UL * 1000UL;
+constexpr unsigned long INITIAL_FAST_REFRESH_WINDOW_MS = 3UL * 60UL * 1000UL;
+constexpr unsigned long POST_PAIRING_SLOW_REFRESH_INTERVAL_MS = 2UL * 60UL * 1000UL;
 constexpr unsigned long INITIAL_PROMPT_REFRESH_DELAY_MS = 1500UL;
 constexpr const char *kBinaryCachePath = "/current.bin";
 constexpr const char *kFactoryResetPath = "/device/factory-reset";
@@ -491,7 +492,8 @@ void runWebServer(bool useAP) {
   unsigned long start = millis();
   unsigned long lastAutoRefresh = millis();
   unsigned long lastFastRefresh = 0;
-  const unsigned long fastRefreshWindowStart = millis();
+  unsigned long lastSlowRefresh = 0;
+  unsigned long fastRefreshWindowStart = millis();
   unsigned long lastPairingPoll = 0;
   bool firstImageShown = false;
   bool ranInitialPromptRefresh = false;
@@ -558,6 +560,10 @@ void runWebServer(bool useAP) {
           server.setAccountLinkedStatus(true);
           initialPromptAt = millis();
           ranInitialPromptRefresh = false;
+          fastRefreshWindowStart = millis();
+          lastFastRefresh = 0;
+          lastSlowRefresh = 0;
+          start = millis();
           const auto refreshResult = refreshDisplayWithResult(true);
           firstImageShown = refreshResult.rendered || firstImageShown;
           lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
@@ -606,6 +612,21 @@ void runWebServer(bool useAP) {
         lastSuccessfulSyncMs = millis();
       }
       lastFastRefresh = millis();
+    }
+
+    if (appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED &&
+        !withinFastRefreshWindow &&
+        (lastSlowRefresh == 0 ||
+         millis() - lastSlowRefresh >= POST_PAIRING_SLOW_REFRESH_INTERVAL_MS)) {
+      Serial.println("Post-pairing slow refresh check.");
+      const auto refreshResult = refreshDisplayWithResult(false);
+      firstImageShown = refreshResult.rendered || firstImageShown;
+      lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
+      lastUpdatePending = refreshResult.updatePending;
+      if (refreshResult.rendered) {
+        lastSuccessfulSyncMs = millis();
+      }
+      lastSlowRefresh = millis();
     }
 
     server.setDeviceStatusSnapshot(*appConfig, lastStatusFetchSucceeded,
