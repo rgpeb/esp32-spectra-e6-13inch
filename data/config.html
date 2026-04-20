@@ -130,9 +130,9 @@
     <h2>Setup progress</h2>
     <p id="stageText">Checking frame status…</p>
     <ol id="steps" class="steps">
-      <li data-step="welcome">Join Framey-Config / wait for setup portal</li>
-      <li data-step="connect-home-wifi">Enter home WiFi details</li>
-      <li data-step="connect-account">Connect to your account</li>
+      <li data-step="welcome">Join Framey-Config (QR 1)</li>
+      <li data-step="connect-home-wifi">Open setup portal + save WiFi (QR 2)</li>
+      <li data-step="connect-account">Switch phone to home WiFi, then connect account (QR 3)</li>
       <li data-step="frame-ready">Account connected / ready</li>
     </ol>
   </div>
@@ -253,9 +253,9 @@
 
     function paintStage(stage) {
       const map = {
-        'welcome': ['Welcome', 'Join Framey-Config on your phone and wait for the setup portal to appear. If it does not, scan the QR shown on the frame.', 'welcome'],
-        'connect-home-wifi': ['Connect home WiFi', 'Enter your home WiFi details in this setup page.', 'connect-home-wifi'],
-        'connect-account': ['Connected to WiFi', 'Next required step: connect this frame to your account.', 'connect-account'],
+        'welcome': ['Step 1', 'Join Framey-Config on your phone (QR 1).', 'welcome'],
+        'connect-home-wifi': ['Step 2', 'Open the setup portal (QR 2), save home WiFi, then switch your phone back to home WiFi.', 'connect-home-wifi'],
+        'connect-account': ['Step 3', 'On home WiFi, open this frame portal (QR 3) and connect your account.', 'connect-account'],
         'frame-ready': ['Frame ready', 'Your frame is connected. Browse the library and choose a photo.', 'frame-ready']
       };
       const [badge, text, step] = map[stage] || map['welcome'];
@@ -299,7 +299,7 @@
         if (!res.ok) throw new Error('save failed');
         const data = await res.json();
         if (data?.wifiConnected) {
-          setStatus('Connected to WiFi. Next required step: connect this frame to your account.');
+          setStatus('Connected to WiFi. Switch your phone to home WiFi, then connect this frame to your account.');
           paintStage('connect-account');
           if (data?.pairingUrl) {
             pairingLink.href = data.pairingUrl;

@@ -109,34 +109,31 @@ void ConfigurationScreen::renderWithCommit(bool commitUpdate) {
   if (appendOnlyMode) {
     const int headerHeight = 138;
     const int stepAreaTop = 154;
-    const int stepGap = 14;
-    const int stepHeight = (screenHeight - stepAreaTop - 24 - (2 * stepGap)) / 3;
-    const int stepY = stepAreaTop + (min((uint8_t)2, setupStepSlot) * (stepHeight + stepGap));
+    const int stepHeight = screenHeight - stepAreaTop - 24;
+    const int stepY = stepAreaTop;
     const int stepX = 18;
     const int stepWidth = screenWidth - 36;
 
-    if (setupStepSlot == 0) {
-      display.setFullWindow();
-      display.fillScreen(GxEPD_WHITE);
-      display.fillRect(0, 0, screenWidth, headerHeight, GxEPD_GREEN);
-      gfx.setFontMode(1);
-      gfx.setBackgroundColor(GxEPD_GREEN);
-      gfx.setForegroundColor(GxEPD_WHITE);
-      gfx.setFont(u8g2_font_fur20_tr);
-      gfx.setCursor(24, 66);
-      gfx.print("Welcome");
-      gfx.setFont(u8g2_font_helvB14_tr);
-      gfx.setCursor(24, 106);
-      gfx.print("Frame setup");
-      // Intentionally no top-right status box in header (keeps header clean).
-    }
+    display.setFullWindow();
+    display.fillScreen(GxEPD_WHITE);
+    display.fillRect(0, 0, screenWidth, headerHeight, GxEPD_GREEN);
+    gfx.setFontMode(1);
+    gfx.setBackgroundColor(GxEPD_GREEN);
+    gfx.setForegroundColor(GxEPD_WHITE);
+    gfx.setFont(u8g2_font_fur20_tr);
+    gfx.setCursor(24, 66);
+    gfx.print("Welcome");
+    gfx.setFont(u8g2_font_helvB14_tr);
+    gfx.setCursor(24, 106);
+    gfx.print("Frame setup");
+    // Intentionally no top-right status box in header (keeps header clean).
 
     display.drawRect(stepX, stepY, stepWidth, stepHeight, GxEPD_GREEN);
     gfx.setBackgroundColor(GxEPD_WHITE);
     gfx.setForegroundColor(GxEPD_BLACK);
     gfx.setFont(u8g2_font_helvB18_tr);
     gfx.setCursor(stepX + 18, stepY + 40);
-    gfx.print(String("Step ") + String(min((uint8_t)3, (uint8_t)(setupStepSlot + 1))));
+    gfx.print(String("Step ") + String(setupStepSlot + 1));
     gfx.setFont(u8g2_font_helvR14_tr);
     std::vector<String> titleLines = wrapText(titleText, 52);
     int textY = stepY + 78;
