@@ -135,10 +135,12 @@ void ConfigurationServer::setupWebServer() {
                doc["accountLinked"] = accountLinked;
                doc["frameName"] = frameName;
                doc["deviceId"] = deviceId;
+               doc["firmwareVersion"] = firmwareVersionValue;
                doc["lastAppliedVersion"] = lastAppliedVersion;
                doc["lastAppliedImageId"] = lastAppliedImageId;
                doc["lastAppliedPhotoName"] = lastAppliedPhotoName;
                doc["lastSyncEpoch"] = lastSyncEpoch;
+               doc["lastCheckInEpoch"] = lastCheckInEpoch;
                doc["statusFetchSucceeded"] = lastStatusFetchSucceeded;
                doc["updatePending"] = isUpdatePending;
                String stage = "welcome";
@@ -158,12 +160,21 @@ void ConfigurationServer::setupWebServer() {
                const bool hasRecentRuntimeSync =
                    lastSyncMillis > 0 && (millis() - lastSyncMillis) <= 10UL * 60UL * 1000UL;
                const bool hasRecentSync = hasRecentEpochSync || hasRecentRuntimeSync;
+               const bool hasRecentCheckInEpoch =
+                   lastCheckInEpoch > 0 &&
+                   (static_cast<uint32_t>(time(nullptr)) - lastCheckInEpoch) <=
+                       10UL * 60UL;
+               const bool hasRecentCheckInRuntime =
+                   lastCheckInMs > 0 && (millis() - lastCheckInMs) <= 10UL * 60UL * 1000UL;
+               const bool hasRecentCheckIn = hasRecentCheckInEpoch || hasRecentCheckInRuntime;
                if (wifiConnected && accountLinked && hasRecentSync &&
                    !isUpdatePending && lastStatusFetchSucceeded) {
                  frameStatus = "Up to date";
                } else if (wifiConnected && accountLinked &&
                           lastStatusFetchSucceeded && isUpdatePending) {
                  frameStatus = "Waiting for update";
+               } else if (wifiConnected && accountLinked && hasRecentCheckIn) {
+                 frameStatus = "Online";
                }
                doc["frameStatus"] = frameStatus;
                String payload;
@@ -296,13 +307,18 @@ void ConfigurationServer::setAccountLinkedStatus(bool linked) {
 
 void ConfigurationServer::setDeviceStatusSnapshot(
     const ApplicationConfig &configSnapshot, bool statusFetchSucceeded,
-    bool updatePending, unsigned long lastSuccessfulSyncMs) {
+    bool updatePending, unsigned long lastSuccessfulSyncMs,
+    const String &firmwareVersion, uint32_t checkInEpoch,
+    unsigned long checkInMs) {
   lastAppliedVersion = String(configSnapshot.lastAppliedVersion);
   lastAppliedImageId = String(configSnapshot.lastAppliedImageId);
   lastAppliedPhotoName = String(configSnapshot.lastAppliedPhotoName);
   lastSyncEpoch = configSnapshot.lastSyncEpoch;
   lastSyncMillis = lastSuccessfulSyncMs;
   deviceId = String(configSnapshot.assignedDeviceId);
+  firmwareVersionValue = firmwareVersion;
+  lastCheckInEpoch = checkInEpoch;
+  lastCheckInMs = checkInMs;
   lastStatusFetchSucceeded = statusFetchSucceeded;
   isUpdatePending = updatePending;
   frameName = WiFi.getHostname();

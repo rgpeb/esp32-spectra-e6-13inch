@@ -212,8 +212,9 @@
         <div class="status-row"><span class="status-label">WiFi</span><span id="wifiStatusValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">Device ID</span><span id="deviceIdValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">Displayed Photo</span><span id="displayedPhotoValue" class="status-value">—</span></div>
-        <div class="status-row"><span class="status-label">Version</span><span id="versionValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Firmware</span><span id="versionValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">Last Synced</span><span id="lastSyncedValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Last Check-In</span><span id="lastCheckInValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">Frame Status</span><span id="frameStatusValue" class="status-value">Not connected</span></div>
       </div>
       <p class="small">Manual link (if button does not open): <a id="pairingLink" href="{{PAIRING_URL}}">{{PAIRING_URL}}</a></p>
@@ -259,6 +260,7 @@
     const displayedPhotoValue = document.getElementById('displayedPhotoValue');
     const versionValue = document.getElementById('versionValue');
     const lastSyncedValue = document.getElementById('lastSyncedValue');
+    const lastCheckInValue = document.getElementById('lastCheckInValue');
     const frameStatusValue = document.getElementById('frameStatusValue');
 
     function setStatus(message, isError = false) {
@@ -308,8 +310,11 @@
       wifiStatusValue.textContent = data?.wifiConnected ? 'Connected' : 'Not connected';
       deviceIdValue.textContent = data?.deviceId || 'Not assigned yet';
       displayedPhotoValue.textContent = data?.lastAppliedPhotoName || data?.lastAppliedImageId || 'Unknown';
-      versionValue.textContent = data?.lastAppliedVersion || 'Unknown';
+      const firmwareVersion = data?.firmwareVersion || 'Unknown';
+      const appliedVersion = data?.lastAppliedVersion || 'none';
+      versionValue.textContent = `${firmwareVersion} (content ${appliedVersion})`;
       lastSyncedValue.textContent = formatSyncTime(data?.lastSyncEpoch);
+      lastCheckInValue.textContent = formatSyncTime(data?.lastCheckInEpoch);
       frameStatusValue.textContent = data?.frameStatus || 'Not connected';
     }
 

@@ -6,6 +6,8 @@
 #include <WiFiClientSecure.h>
 #include <time.h>
 
+#include "FrameStatusHeaders.h"
+
 namespace {
 constexpr const char *kBinaryCachePath = "/current.bin";
 constexpr size_t kNativeBinarySize = (EPD_NATIVE_WIDTH * EPD_NATIVE_HEIGHT) / 2;
@@ -25,17 +27,6 @@ void logBinaryPathStage(const char *functionName, const char *stage,
   Serial.printf("[%s] %s path: %s\n", functionName, stage, path);
 }
 
-void addLocalPortalHeaders(HTTPClient &http) {
-  if (WiFi.status() != WL_CONNECTED) {
-    return;
-  }
-  const String localIp = WiFi.localIP().toString();
-  if (localIp.length() == 0 || localIp == "0.0.0.0") {
-    return;
-  }
-  http.addHeader("X-Frame-Local-IP", localIp);
-  http.addHeader("X-Frame-Portal-URL", "http://" + localIp + "/");
-}
 } // namespace
 
 ImageScreen::ImageScreen(DisplayType &display, ApplicationConfig &config,
@@ -78,7 +69,7 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
   HTTPClient http;
   http.begin(*client, statusUrl);
   http.setTimeout(15000);
-  addLocalPortalHeaders(http);
+  addFrameStatusHeaders(http, config, getResolvedDeviceId());
   const char *headerKeys[] = {"ETag"};
   http.collectHeaders(headerKeys, 1);
 
@@ -246,6 +237,7 @@ bool ImageScreen::downloadBinaryToLittleFS(const String &url,
   HTTPClient http;
   http.begin(*client, binaryUrl);
   http.setTimeout(30000);
+  addFrameStatusHeaders(http, config, getResolvedDeviceId());
   const char *headerKeys[] = {"Content-Length"};
   http.collectHeaders(headerKeys, 1);
   if (ifNoneMatch.length() > 0) {

@@ -60,7 +60,10 @@ public:
   void setDeviceStatusSnapshot(const ApplicationConfig &configSnapshot,
                                bool statusFetchSucceeded,
                                bool updatePending,
-                               unsigned long lastSuccessfulSyncMs);
+                               unsigned long lastSuccessfulSyncMs,
+                               const String &firmwareVersion,
+                               uint32_t lastCheckInEpoch,
+                               unsigned long lastCheckInMs);
 
 private:
   String deviceName;
@@ -85,6 +88,9 @@ private:
   unsigned long lastSyncMillis = 0;
   String frameName;
   String deviceId;
+  String firmwareVersionValue;
+  uint32_t lastCheckInEpoch = 0;
+  unsigned long lastCheckInMs = 0;
 
   String htmlTemplate;
   OnSaveCallback onSaveCallback;

@@ -5,6 +5,8 @@
 #include "ConfigurationScreen.h"
 #include "ConfigurationServer.h"
 #include "DisplayAdapter.h"
+#include "FirmwareInfo.h"
+#include "FrameStatusHeaders.h"
 #include "ImageScreen.h"
 #include "WiFiConnection.h"
 #include <ArduinoJson.h>
@@ -12,6 +14,7 @@
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
 #include <esp_sleep.h>
+#include <time.h>
 #include <vector>
 
 DisplayType display;
@@ -91,17 +94,13 @@ SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
 }
 
 void attachLocalPortalHeaders(HTTPClient &http) {
-  if (WiFi.status() != WL_CONNECTED) {
+  if (!appConfig) {
     return;
   }
-
-  const String localIp = WiFi.localIP().toString();
-  if (localIp.length() == 0 || localIp == "0.0.0.0") {
-    return;
-  }
-
-  http.addHeader("X-Frame-Local-IP", localIp);
-  http.addHeader("X-Frame-Portal-URL", "http://" + localIp + "/");
+  const String resolvedDeviceId =
+      appConfig->hasAssignedDeviceId() ? String(appConfig->assignedDeviceId)
+                                       : String(DEVICE_ID);
+  addFrameStatusHeaders(http, *appConfig, resolvedDeviceId);
 }
 
 bool fetchAssignedDeviceIdFromPairing(String &assignedDeviceIdOut) {
@@ -502,10 +501,25 @@ void runWebServer(bool useAP) {
   bool lastStatusFetchSucceeded = false;
   bool lastUpdatePending = false;
   unsigned long lastSuccessfulSyncMs = 0;
+  unsigned long lastServerCheckInMs = 0;
+  uint32_t lastServerCheckInEpoch = 0;
+  auto applyRefreshResult = [&](const ImageScreen::RefreshResult &refreshResult) {
+    firstImageShown = refreshResult.rendered || firstImageShown;
+    lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
+    lastUpdatePending = refreshResult.updatePending;
+    lastServerCheckInMs = millis();
+    const time_t now = time(nullptr);
+    lastServerCheckInEpoch = now > 0 ? static_cast<uint32_t>(now) : 0;
+    if (refreshResult.rendered) {
+      lastSuccessfulSyncMs = millis();
+    }
+  };
   server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
   server.setAccountLinkedStatus(appConfig->hasAssignedDeviceId());
   server.setDeviceStatusSnapshot(*appConfig, lastStatusFetchSucceeded,
-                                 lastUpdatePending, lastSuccessfulSyncMs);
+                                 lastUpdatePending, lastSuccessfulSyncMs,
+                                 firmwareVersion(), lastServerCheckInEpoch,
+                                 lastServerCheckInMs);
 
   while (true) {
     server.handleRequests();
@@ -515,13 +529,7 @@ void runWebServer(bool useAP) {
       server.clearRefreshRequest();
       printf("Manual refresh requested from web UI.\n");
       if (appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED) {
-        const auto refreshResult = refreshDisplayWithResult(false);
-        firstImageShown = refreshResult.rendered || firstImageShown;
-        lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
-        lastUpdatePending = refreshResult.updatePending;
-        if (refreshResult.rendered) {
-          lastSuccessfulSyncMs = millis();
-        }
+        applyRefreshResult(refreshDisplayWithResult(false));
       } else {
         printf("Manual refresh ignored: frame is not paired yet.\n");
       }
@@ -537,13 +545,7 @@ void runWebServer(bool useAP) {
         WiFi.status() == WL_CONNECTED &&
         (millis() - lastAutoRefresh >= AWAKE_AUTO_REFRESH_MS)) {
       printf("Always Awake auto refresh.\n");
-      const auto refreshResult = refreshDisplayWithResult();
-      firstImageShown = refreshResult.rendered || firstImageShown;
-      lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
-      lastUpdatePending = refreshResult.updatePending;
-      if (refreshResult.rendered) {
-        lastSuccessfulSyncMs = millis();
-      }
+      applyRefreshResult(refreshDisplayWithResult());
       lastAutoRefresh = millis();
     }
 
@@ -564,13 +566,7 @@ void runWebServer(bool useAP) {
           lastFastRefresh = 0;
           lastSlowRefresh = 0;
           start = millis();
-          const auto refreshResult = refreshDisplayWithResult(true);
-          firstImageShown = refreshResult.rendered || firstImageShown;
-          lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
-          lastUpdatePending = refreshResult.updatePending;
-          if (refreshResult.rendered) {
-            lastSuccessfulSyncMs = millis();
-          }
+          applyRefreshResult(refreshDisplayWithResult(true));
         }
       }
     }
@@ -588,13 +584,7 @@ void runWebServer(bool useAP) {
         !ranInitialPromptRefresh &&
         millis() - initialPromptAt >= INITIAL_PROMPT_REFRESH_DELAY_MS) {
       Serial.println("Initial prompt refresh check.");
-      const auto refreshResult = refreshDisplayWithResult(true);
-      firstImageShown = refreshResult.rendered || firstImageShown;
-      lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
-      lastUpdatePending = refreshResult.updatePending;
-      if (refreshResult.rendered) {
-        lastSuccessfulSyncMs = millis();
-      }
+      applyRefreshResult(refreshDisplayWithResult(true));
       ranInitialPromptRefresh = true;
       lastFastRefresh = millis();
     }
@@ -604,13 +594,7 @@ void runWebServer(bool useAP) {
         (lastFastRefresh == 0 ||
          millis() - lastFastRefresh >= INITIAL_FAST_REFRESH_INTERVAL_MS)) {
       Serial.println("Initial fast refresh check.");
-      const auto refreshResult = refreshDisplayWithResult(lastFastRefresh == 0);
-      firstImageShown = refreshResult.rendered || firstImageShown;
-      lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
-      lastUpdatePending = refreshResult.updatePending;
-      if (refreshResult.rendered) {
-        lastSuccessfulSyncMs = millis();
-      }
+      applyRefreshResult(refreshDisplayWithResult(lastFastRefresh == 0));
       lastFastRefresh = millis();
     }
 
@@ -619,18 +603,14 @@ void runWebServer(bool useAP) {
         (lastSlowRefresh == 0 ||
          millis() - lastSlowRefresh >= POST_PAIRING_SLOW_REFRESH_INTERVAL_MS)) {
       Serial.println("Post-pairing slow refresh check.");
-      const auto refreshResult = refreshDisplayWithResult(false);
-      firstImageShown = refreshResult.rendered || firstImageShown;
-      lastStatusFetchSucceeded = refreshResult.statusFetchSucceeded;
-      lastUpdatePending = refreshResult.updatePending;
-      if (refreshResult.rendered) {
-        lastSuccessfulSyncMs = millis();
-      }
+      applyRefreshResult(refreshDisplayWithResult(false));
       lastSlowRefresh = millis();
     }
 
     server.setDeviceStatusSnapshot(*appConfig, lastStatusFetchSucceeded,
-                                   lastUpdatePending, lastSuccessfulSyncMs);
+                                   lastUpdatePending, lastSuccessfulSyncMs,
+                                   firmwareVersion(), lastServerCheckInEpoch,
+                                   lastServerCheckInMs);
 
     if (!alwaysAwake && timeoutMs > 0 && millis() - start >= timeoutMs) {
       printf("Web server timeout reached.\n");
