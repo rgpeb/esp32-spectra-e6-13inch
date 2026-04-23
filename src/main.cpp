@@ -25,10 +25,11 @@ namespace {
 constexpr unsigned long SERVER_LOOP_DELAY_MS = 10;
 constexpr unsigned long AWAKE_AUTO_REFRESH_MS = 5UL * 60UL * 1000UL;
 constexpr unsigned long PAIRING_POLL_INTERVAL_MS = 5000UL;
-constexpr unsigned long INITIAL_FAST_REFRESH_INTERVAL_MS = 10000UL;
-constexpr unsigned long INITIAL_FAST_REFRESH_WINDOW_MS = 3UL * 60UL * 1000UL;
-constexpr unsigned long POST_PAIRING_SLOW_REFRESH_INTERVAL_MS = 2UL * 60UL * 1000UL;
-constexpr unsigned long INITIAL_PROMPT_REFRESH_DELAY_MS = 1500UL;
+constexpr unsigned long SETUP_REFRESH_INTERVAL_MS = 30UL * 1000UL;
+constexpr unsigned long SETUP_POST_COMPLETE_WINDOW_MS = 10UL * 60UL * 1000UL;
+constexpr unsigned long CHECK_INTERVAL_MORE_RESPONSIVE_MS = 15UL * 60UL * 1000UL;
+constexpr unsigned long CHECK_INTERVAL_BALANCED_MS = 60UL * 60UL * 1000UL;
+constexpr unsigned long CHECK_INTERVAL_LONGER_BATTERY_MS = 6UL * 60UL * 60UL * 1000UL;
 constexpr const char *kBinaryCachePath = "/current.bin";
 constexpr const char *kFactoryResetPath = "/device/factory-reset";
 constexpr const char *kFactoryResetByDevicePrefix = "/device/";
@@ -72,6 +73,18 @@ String getPortalUrlForCurrentNetwork() {
   }
 
   return "";
+}
+
+unsigned long getNormalCheckIntervalMs(const ApplicationConfig &config) {
+  switch (config.checkForNewImageMode) {
+  case CHECK_MODE_MORE_RESPONSIVE:
+    return CHECK_INTERVAL_MORE_RESPONSIVE_MS;
+  case CHECK_MODE_LONGER_BATTERY:
+    return CHECK_INTERVAL_LONGER_BATTERY_MS;
+  case CHECK_MODE_BALANCED:
+  default:
+    return CHECK_INTERVAL_BALANCED_MS;
+  }
 }
 
 SetupUiState getCurrentSetupStage(bool hasDisplayedFirstImage) {
@@ -467,6 +480,7 @@ void saveConfiguration(const Configuration &config) {
   appConfig->powerMode =
       (config.powerMode == POWER_MODE_ALWAYS_AWAKE) ? POWER_MODE_ALWAYS_AWAKE
                                                      : POWER_MODE_SLEEP;
+  appConfig->checkForNewImageMode = config.checkForNewImageMode;
 
   if (configStorage.save(*appConfig)) {
     printf("Configuration saved.\n");
@@ -477,7 +491,8 @@ void saveConfiguration(const Configuration &config) {
 
 void runWebServer(bool useAP) {
   Configuration serverConfig(appConfig->wifiSSID, appConfig->wifiPassword,
-                             appConfig->powerMode, appConfig->pairingToken,
+                             appConfig->powerMode, appConfig->checkForNewImageMode,
+                             appConfig->pairingToken,
                              PAIRING_PAGE_BASE_URL, PAIRING_STATUS_PATH);
   ConfigurationServer server(serverConfig);
   server.run(saveConfiguration, useAP);
@@ -490,13 +505,14 @@ void runWebServer(bool useAP) {
   const unsigned long timeoutMs = alwaysAwake ? 0UL : 10UL * 60UL * 1000UL;
   unsigned long start = millis();
   unsigned long lastAutoRefresh = millis();
-  unsigned long lastFastRefresh = 0;
-  unsigned long lastSlowRefresh = 0;
-  unsigned long fastRefreshWindowStart = millis();
+  unsigned long lastBackgroundRefreshMs = 0;
+  unsigned long setupCompletedAtMs = 0;
   unsigned long lastPairingPoll = 0;
   bool firstImageShown = false;
-  bool ranInitialPromptRefresh = false;
-  unsigned long initialPromptAt = millis();
+  bool setupModeActive = true;
+  bool setupCompletionWindowStarted = false;
+  bool wasOffline = (WiFi.status() != WL_CONNECTED);
+  bool reconnectImmediateCheckPending = false;
   SetupUiState lastRenderedSetupState = SETUP_STATE_READY;
   bool lastStatusFetchSucceeded = false;
   bool lastUpdatePending = false;
@@ -513,6 +529,7 @@ void runWebServer(bool useAP) {
     if (refreshResult.rendered) {
       lastSuccessfulSyncMs = millis();
     }
+    lastBackgroundRefreshMs = millis();
   };
   server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
   server.setAccountLinkedStatus(appConfig->hasAssignedDeviceId());
@@ -523,12 +540,21 @@ void runWebServer(bool useAP) {
 
   while (true) {
     server.handleRequests();
-    server.setWifiConnectionStatus(WiFi.status() == WL_CONNECTED);
+    const bool wifiConnected = (WiFi.status() == WL_CONNECTED);
+    server.setWifiConnectionStatus(wifiConnected);
+
+    if (!wifiConnected) {
+      wasOffline = true;
+    } else if (wasOffline) {
+      wasOffline = false;
+      reconnectImmediateCheckPending = true;
+      Serial.println("WiFi connectivity restored: immediate reconnect check armed.");
+    }
 
     if (server.isRefreshRequested()) {
       server.clearRefreshRequest();
       printf("Manual refresh requested from web UI.\n");
-      if (appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED) {
+      if (appConfig->hasAssignedDeviceId() && wifiConnected) {
         applyRefreshResult(refreshDisplayWithResult(false));
       } else {
         printf("Manual refresh ignored: frame is not paired yet.\n");
@@ -541,15 +567,14 @@ void runWebServer(bool useAP) {
       processResetAction(resetAction);
     }
 
-    if (alwaysAwake && appConfig->hasAssignedDeviceId() &&
-        WiFi.status() == WL_CONNECTED &&
+    if (alwaysAwake && appConfig->hasAssignedDeviceId() && wifiConnected &&
         (millis() - lastAutoRefresh >= AWAKE_AUTO_REFRESH_MS)) {
       printf("Always Awake auto refresh.\n");
       applyRefreshResult(refreshDisplayWithResult());
       lastAutoRefresh = millis();
     }
 
-    if (!appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED &&
+    if (!appConfig->hasAssignedDeviceId() && wifiConnected &&
         (lastPairingPoll == 0 || millis() - lastPairingPoll >= PAIRING_POLL_INTERVAL_MS)) {
       lastPairingPoll = millis();
       String assignedDeviceId;
@@ -560,11 +585,6 @@ void runWebServer(bool useAP) {
         if (configStorage.save(*appConfig)) {
           printf("Pairing complete. Assigned deviceId='%s'\n", appConfig->assignedDeviceId);
           server.setAccountLinkedStatus(true);
-          initialPromptAt = millis();
-          ranInitialPromptRefresh = false;
-          fastRefreshWindowStart = millis();
-          lastFastRefresh = 0;
-          lastSlowRefresh = 0;
           start = millis();
           applyRefreshResult(refreshDisplayWithResult(true));
         }
@@ -577,34 +597,34 @@ void runWebServer(bool useAP) {
       lastRenderedSetupState = derivedStage;
     }
 
-    const bool withinFastRefreshWindow =
-        millis() - fastRefreshWindowStart <= INITIAL_FAST_REFRESH_WINDOW_MS;
-
-    if (appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED &&
-        !ranInitialPromptRefresh &&
-        millis() - initialPromptAt >= INITIAL_PROMPT_REFRESH_DELAY_MS) {
-      Serial.println("Initial prompt refresh check.");
-      applyRefreshResult(refreshDisplayWithResult(true));
-      ranInitialPromptRefresh = true;
-      lastFastRefresh = millis();
+    if (derivedStage == SETUP_STATE_READY && !setupCompletionWindowStarted) {
+      setupCompletionWindowStarted = true;
+      setupCompletedAtMs = millis();
+      Serial.println("Setup complete detected: 10-minute setup refresh window started.");
     }
 
-    if (appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED &&
-        withinFastRefreshWindow &&
-        (lastFastRefresh == 0 ||
-         millis() - lastFastRefresh >= INITIAL_FAST_REFRESH_INTERVAL_MS)) {
-      Serial.println("Initial fast refresh check.");
-      applyRefreshResult(refreshDisplayWithResult(lastFastRefresh == 0));
-      lastFastRefresh = millis();
+    if (setupCompletionWindowStarted &&
+        millis() - setupCompletedAtMs >= SETUP_POST_COMPLETE_WINDOW_MS) {
+      setupModeActive = false;
     }
 
-    if (appConfig->hasAssignedDeviceId() && WiFi.status() == WL_CONNECTED &&
-        !withinFastRefreshWindow &&
-        (lastSlowRefresh == 0 ||
-         millis() - lastSlowRefresh >= POST_PAIRING_SLOW_REFRESH_INTERVAL_MS)) {
-      Serial.println("Post-pairing slow refresh check.");
+    if (appConfig->hasAssignedDeviceId() && wifiConnected && reconnectImmediateCheckPending) {
+      Serial.println("Reconnect recovery check.");
       applyRefreshResult(refreshDisplayWithResult(false));
-      lastSlowRefresh = millis();
+      reconnectImmediateCheckPending = false;
+    } else if (appConfig->hasAssignedDeviceId() && wifiConnected) {
+      const unsigned long intervalMs =
+          setupModeActive ? SETUP_REFRESH_INTERVAL_MS : getNormalCheckIntervalMs(*appConfig);
+      if (lastBackgroundRefreshMs == 0 ||
+          millis() - lastBackgroundRefreshMs >= intervalMs) {
+        if (setupModeActive) {
+          Serial.println("Setup-mode background check.");
+        } else {
+          Serial.printf("Normal background check (mode=%u).\n",
+                        appConfig->checkForNewImageMode);
+        }
+        applyRefreshResult(refreshDisplayWithResult(lastBackgroundRefreshMs == 0));
+      }
     }
 
     server.setDeviceStatusSnapshot(*appConfig, lastStatusFetchSucceeded,

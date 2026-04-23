@@ -24,6 +24,7 @@ class ApplicationConfigStorage {
   static const char* KEY_DITHER_MODE;
   static const char* KEY_SCALING_MODE;
   static const char* KEY_POWER_MODE;
+  static const char* KEY_CHECK_FOR_NEW_IMAGE_MODE;
   static const char* KEY_SLEEP_MINUTES;
   static const char* KEY_LAST_STATUS_VERSION;
   static const char* KEY_LAST_STATUS_ETAG;
