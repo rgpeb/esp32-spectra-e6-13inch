@@ -357,7 +357,7 @@ const char DEFAULT_IMAGE_URL[] = "https://example.com/image.png";
 2. Connect to it with your phone/laptop
 3. Navigate to `http://192.168.4.1`
 4. Enter your WiFi SSID, password, and (optionally) an image URL
-5. Save — credentials are stored in NVS and persist across reboots
+5. Save — credentials and frame identity state are stored in NVS and persist across reboots/OTA swaps
 
 ### Normal Operation
 
@@ -375,12 +375,30 @@ const char DEFAULT_IMAGE_URL[] = "https://example.com/image.png";
 
 | Partition | Type | Offset | Size | Purpose |
 |---|---|---|---|---|
-| `nvs` | data (nvs) | 0x9000 | 20 KB | WiFi credentials, image URL |
+| `nvs` | data (nvs) | 0x9000 | 20 KB | Persistent onboarding + frame identity state |
 | `otadata` | data (ota) | 0xE000 | 8 KB | OTA metadata |
-| `app0` | app (ota_0) | 0x10000 | 2.3 MB | Firmware |
-| `spiffs` | data (spiffs) | 0x260000 | **5.6 MB** | LittleFS (uploaded images + HTML) |
+| `app0` | app (ota_0) | 0x10000 | 1.75 MB | Firmware slot A |
+| `app1` | app (ota_1) | 0x1D0000 | 1.75 MB | Firmware slot B |
+| `spiffs` | data (spiffs) | 0x390000 | **4.44 MB** | LittleFS (uploaded images + HTML) |
 
-The 5.6 MB LittleFS partition is large enough for one high-resolution image at a time.
+Two OTA application slots allow silent firmware upgrades with rollback-safe slot switching while leaving `nvs` untouched.
+
+## OTA Persistence Contract
+
+Firmware updates must not trigger onboarding again. Persistent state is stored in NVS key-value entries (not only a raw struct blob), so schema evolution across firmware versions keeps identity-critical data stable.
+
+Persisted across OTA update/reboot:
+- WiFi SSID + password
+- Pairing token/state
+- Assigned `deviceId` (server-side frame identity)
+- User settings (`powerMode`, sleep interval, dithering/scaling)
+- Last sync/apply metadata (`version`, `etag`, last applied image info)
+
+During normal OTA reboot flow:
+- Device reconnects using saved WiFi credentials
+- Device remains linked to the same account/deviceId
+- Device continues polling/rendering as the same frame record on the server
+- No onboarding UI is required unless the user explicitly triggers reset/factory-reset
 
 ---
 
