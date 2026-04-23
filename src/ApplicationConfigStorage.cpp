@@ -6,12 +6,13 @@
 const char* ApplicationConfigStorage::NVS_NAMESPACE = "weather_config";
 const char* ApplicationConfigStorage::CONFIG_KEY = "app_config";
 const char* ApplicationConfigStorage::CONFIG_VERSION_KEY = "cfg_ver";
-const uint32_t ApplicationConfigStorage::CONFIG_VERSION = 2;
+const uint32_t ApplicationConfigStorage::CONFIG_VERSION = 3;
 const char* ApplicationConfigStorage::KEY_WIFI_SSID = "wifi_ssid";
 const char* ApplicationConfigStorage::KEY_WIFI_PASSWORD = "wifi_pass";
 const char* ApplicationConfigStorage::KEY_DITHER_MODE = "dither";
 const char* ApplicationConfigStorage::KEY_SCALING_MODE = "scale";
 const char* ApplicationConfigStorage::KEY_POWER_MODE = "pwr";
+const char* ApplicationConfigStorage::KEY_CHECK_FOR_NEW_IMAGE_MODE = "img_chk";
 const char* ApplicationConfigStorage::KEY_SLEEP_MINUTES = "sleep_min";
 const char* ApplicationConfigStorage::KEY_LAST_STATUS_VERSION = "st_ver";
 const char* ApplicationConfigStorage::KEY_LAST_STATUS_ETAG = "st_etag";
@@ -83,6 +84,8 @@ bool ApplicationConfigStorage::save(const ApplicationConfig& config) {
   ok = ok && (nvs_set_u8(nvsHandle, KEY_DITHER_MODE, config.ditherMode) == ESP_OK);
   ok = ok && (nvs_set_u8(nvsHandle, KEY_SCALING_MODE, config.scalingMode) == ESP_OK);
   ok = ok && (nvs_set_u8(nvsHandle, KEY_POWER_MODE, config.powerMode) == ESP_OK);
+  ok = ok && (nvs_set_u8(nvsHandle, KEY_CHECK_FOR_NEW_IMAGE_MODE,
+                         config.checkForNewImageMode) == ESP_OK);
   ok = ok && (nvs_set_u16(nvsHandle, KEY_SLEEP_MINUTES, config.sleepMinutes) == ESP_OK);
   ok = ok && setString(nvsHandle, KEY_LAST_STATUS_VERSION, config.lastStatusVersion);
   ok = ok && setString(nvsHandle, KEY_LAST_STATUS_ETAG, config.lastStatusEtag);
@@ -134,6 +137,8 @@ std::unique_ptr<ApplicationConfig> ApplicationConfigStorage::load() {
     getU8OrKeep(nvsHandle, KEY_DITHER_MODE, &config->ditherMode);
     getU8OrKeep(nvsHandle, KEY_SCALING_MODE, &config->scalingMode);
     getU8OrKeep(nvsHandle, KEY_POWER_MODE, &config->powerMode);
+    getU8OrKeep(nvsHandle, KEY_CHECK_FOR_NEW_IMAGE_MODE,
+                &config->checkForNewImageMode);
     getU16OrKeep(nvsHandle, KEY_SLEEP_MINUTES, &config->sleepMinutes);
     getStringOrKeep(nvsHandle, KEY_LAST_STATUS_VERSION, config->lastStatusVersion,
                     sizeof(config->lastStatusVersion));

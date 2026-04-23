@@ -211,6 +211,7 @@
         <div class="status-row"><span class="status-label">Account</span><span id="accountStatusValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">WiFi</span><span id="wifiStatusValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">Device ID</span><span id="deviceIdValue" class="status-value">—</span></div>
+        <div class="status-row"><span class="status-label">Check for new image</span><span id="checkForNewImageValue" class="status-value">{{CHECK_FOR_NEW_IMAGE}}</span></div>
         <div class="status-row"><span class="status-label">Displayed Photo</span><span id="displayedPhotoValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">Firmware</span><span id="versionValue" class="status-value">—</span></div>
         <div class="status-row"><span class="status-label">Last Synced</span><span id="lastSyncedValue" class="status-value">—</span></div>
@@ -257,6 +258,7 @@
     const accountStatusValue = document.getElementById('accountStatusValue');
     const wifiStatusValue = document.getElementById('wifiStatusValue');
     const deviceIdValue = document.getElementById('deviceIdValue');
+    const checkForNewImageValue = document.getElementById('checkForNewImageValue');
     const displayedPhotoValue = document.getElementById('displayedPhotoValue');
     const versionValue = document.getElementById('versionValue');
     const lastSyncedValue = document.getElementById('lastSyncedValue');
@@ -309,6 +311,7 @@
       accountStatusValue.textContent = data?.accountLinked ? 'Connected' : 'Not connected';
       wifiStatusValue.textContent = data?.wifiConnected ? 'Connected' : 'Not connected';
       deviceIdValue.textContent = data?.deviceId || 'Not assigned yet';
+      checkForNewImageValue.textContent = data?.checkForNewImage || 'Balanced';
       displayedPhotoValue.textContent = data?.lastAppliedPhotoName || data?.lastAppliedImageId || 'Unknown';
       const firmwareVersion = data?.firmwareVersion || 'Unknown';
       const appliedVersion = data?.lastAppliedVersion || 'none';

@@ -29,12 +29,19 @@ enum PowerMode : uint8_t {
   POWER_MODE_ALWAYS_AWAKE = 1,
 };
 
+enum CheckForNewImageMode : uint8_t {
+  CHECK_MODE_MORE_RESPONSIVE = 0,
+  CHECK_MODE_BALANCED = 1,
+  CHECK_MODE_LONGER_BATTERY = 2,
+};
+
 struct ApplicationConfig {
   char wifiSSID[64];
   char wifiPassword[64];
   uint8_t ditherMode;  // DitherMode enum value
   uint8_t scalingMode; // ScalingMode enum value (0=fit, 1=fill)
   uint8_t powerMode;   // PowerMode enum value
+  uint8_t checkForNewImageMode; // CheckForNewImageMode enum value
   uint16_t sleepMinutes;
 
   // Persisted binary update tracking metadata.
@@ -68,6 +75,7 @@ struct ApplicationConfig {
     ditherMode = DITHER_FLOYD_STEINBERG;
     scalingMode = SCALE_FIT;
     powerMode = POWER_MODE_SLEEP;
+    checkForNewImageMode = CHECK_MODE_BALANCED;
     sleepMinutes = 30;
   }
 

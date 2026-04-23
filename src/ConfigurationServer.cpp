@@ -10,6 +10,20 @@
 const char *ConfigurationServer::WIFI_AP_NAME = "Framey-Config";
 const char *ConfigurationServer::WIFI_AP_PASSWORD = "configure123";
 
+namespace {
+const char *checkModeLabel(uint8_t mode) {
+  switch (mode) {
+  case CHECK_MODE_MORE_RESPONSIVE:
+    return "More Responsive";
+  case CHECK_MODE_LONGER_BATTERY:
+    return "Longer Battery";
+  case CHECK_MODE_BALANCED:
+  default:
+    return "Balanced";
+  }
+}
+} // namespace
+
 ConfigurationServer::ConfigurationServer(const Configuration &currentConfig)
     : deviceName("E-Ink-Display"), wifiAccessPointName(WIFI_AP_NAME),
       wifiAccessPointPassword(WIFI_AP_PASSWORD),
@@ -143,6 +157,8 @@ void ConfigurationServer::setupWebServer() {
                doc["lastCheckInEpoch"] = lastCheckInEpoch;
                doc["statusFetchSucceeded"] = lastStatusFetchSucceeded;
                doc["updatePending"] = isUpdatePending;
+               doc["checkForNewImage"] =
+                   checkModeLabel(currentConfiguration.checkForNewImageMode);
                String stage = "welcome";
                if (wifiConnected && accountLinked) {
                  stage = "frame-ready";
@@ -284,6 +300,8 @@ String ConfigurationServer::getConfigurationPage() {
                                               : "Welcome"));
   setSelected(html, "{{POWER_SEL_SLEEP}}", currentConfiguration.powerMode == 0);
   setSelected(html, "{{POWER_SEL_AWAKE}}", currentConfiguration.powerMode == 1);
+  html.replace("{{CHECK_FOR_NEW_IMAGE}}",
+               checkModeLabel(currentConfiguration.checkForNewImageMode));
   return html;
 }
 
@@ -321,6 +339,7 @@ void ConfigurationServer::setDeviceStatusSnapshot(
   lastCheckInMs = checkInMs;
   lastStatusFetchSucceeded = statusFetchSucceeded;
   isUpdatePending = updatePending;
+  currentConfiguration.checkForNewImageMode = configSnapshot.checkForNewImageMode;
   frameName = WiFi.getHostname();
   if (frameName.length() == 0) {
     frameName = deviceName;

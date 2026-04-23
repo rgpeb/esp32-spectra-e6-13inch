@@ -14,6 +14,22 @@ constexpr size_t kNativeBinarySize = (EPD_NATIVE_WIDTH * EPD_NATIVE_HEIGHT) / 2;
 constexpr size_t kDownloadChunkSize = 2048;
 constexpr unsigned long kBinaryStreamStallTimeoutMs = 15000;
 
+bool parseCheckForNewImageModeValue(const String &value, uint8_t &modeOut) {
+  if (value.equalsIgnoreCase("More Responsive")) {
+    modeOut = CHECK_MODE_MORE_RESPONSIVE;
+    return true;
+  }
+  if (value.equalsIgnoreCase("Balanced")) {
+    modeOut = CHECK_MODE_BALANCED;
+    return true;
+  }
+  if (value.equalsIgnoreCase("Longer Battery")) {
+    modeOut = CHECK_MODE_LONGER_BATTERY;
+    return true;
+  }
+  return false;
+}
+
 void copyToFixedBuffer(char *dst, size_t dstSize, const String &src) {
   if (dstSize == 0) {
     return;
@@ -139,6 +155,27 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
     status.etag = statusHeaderEtag;
   }
 
+  uint8_t parsedCheckMode = CHECK_MODE_BALANCED;
+  JsonVariantConst checkModeVar = doc["checkForNewImage"];
+  if (!checkModeVar.is<const char *>()) {
+    checkModeVar = doc["checkForNewImageMode"];
+  }
+  if (!checkModeVar.is<const char *>()) {
+    JsonVariantConst settingsVar = doc["settings"];
+    if (!settingsVar.isNull()) {
+      checkModeVar = settingsVar["checkForNewImage"];
+      if (!checkModeVar.is<const char *>()) {
+        checkModeVar = settingsVar["checkForNewImageMode"];
+      }
+    }
+  }
+  if (checkModeVar.is<const char *>() &&
+      parseCheckForNewImageModeValue(String(checkModeVar.as<const char *>()),
+                                     parsedCheckMode)) {
+    status.hasCheckForNewImageMode = true;
+    status.checkForNewImageMode = parsedCheckMode;
+  }
+
   JsonVariantConst rotationVar = doc["rotationDegrees"];
   if (rotationVar.is<int>()) {
     status.rotationDegrees = rotationVar.as<int>();
@@ -173,6 +210,10 @@ ImageScreen::StatusMetadata ImageScreen::fetchStatusMetadata() {
   Serial.println("Status parsed imageId: '" + status.imageId + "'");
   Serial.println("Status parsed photoName: '" + status.photoName + "'");
   Serial.printf("Status parsed rotationDegrees: %d\n", status.rotationDegrees);
+  if (status.hasCheckForNewImageMode) {
+    Serial.printf("Status parsed checkForNewImageMode: %u\n",
+                  status.checkForNewImageMode);
+  }
   return status;
 }
 
@@ -510,6 +551,16 @@ ImageScreen::RefreshResult ImageScreen::refresh() {
   }
 
   const bool needsUpdate = isUpdateNeeded(status);
+  if (status.hasCheckForNewImageMode &&
+      config.checkForNewImageMode != status.checkForNewImageMode) {
+    config.checkForNewImageMode = status.checkForNewImageMode;
+    if (configStorage.save(config)) {
+      Serial.printf("Persisted server check-for-new-image mode=%u\n",
+                    config.checkForNewImageMode);
+    } else {
+      Serial.println("Failed to persist check-for-new-image mode");
+    }
+  }
   result.updatePending = needsUpdate;
   if (!needsUpdate) {
     Serial.println("Update needed: no (keeping current display)");

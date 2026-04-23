@@ -25,6 +25,8 @@ private:
     String imageId;
     String photoName;
     int rotationDegrees = 0;
+    bool hasCheckForNewImageMode = false;
+    uint8_t checkForNewImageMode = CHECK_MODE_BALANCED;
     int httpCode = -1;
   };
 

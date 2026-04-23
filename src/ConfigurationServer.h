@@ -15,6 +15,7 @@ struct Configuration {
   String ssid;
   String password;
   uint8_t powerMode = 0;
+  uint8_t checkForNewImageMode = CHECK_MODE_BALANCED;
   String pairingToken;
   String pairingPageBaseUrl;
   String pairingStatusPath;
@@ -22,9 +23,10 @@ struct Configuration {
   Configuration() = default;
 
   Configuration(const String &ssid, const String &password, uint8_t powerMode,
-                const String &pairingToken, const String &pairingPageBaseUrl,
-                const String &pairingStatusPath)
+                uint8_t checkForNewImageMode, const String &pairingToken,
+                const String &pairingPageBaseUrl, const String &pairingStatusPath)
       : ssid(ssid), password(password), powerMode(powerMode),
+        checkForNewImageMode(checkForNewImageMode),
         pairingToken(pairingToken), pairingPageBaseUrl(pairingPageBaseUrl),
         pairingStatusPath(pairingStatusPath) {}
 };
